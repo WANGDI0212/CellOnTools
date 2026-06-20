@@ -1,0 +1,11 @@
+# Normalise line endings: treat these as text and check out with LF
+*.R    text eol=lf
+*.Rd   text eol=lf
+*.md   text eol=lf
+DESCRIPTION text eol=lf
+NAMESPACE   text eol=lf
+
+# Binary data shipped with the package
+*.rda  binary
+*.RData binary
+*.obo  binary

@@ -1,0 +1,46 @@
+Package: CellOnTools
+Type: Package
+Title: Tools for Cell Ontology Mapping, Hierarchy, Similarity, and Marker Enrichment
+Version: 0.1.0
+Date: 2026-06-19
+Authors@R: person(given = "Di",
+                  family = "Wang",
+                  role = c("aut", "cre"),
+                  email = "wangdi0001@foxmail.com")
+Description: Provides utilities for loading and querying the Cell Ontology (CL),
+    mapping cell-type labels to CL identifiers, converting between labels and
+    identifiers, extracting hierarchy subgraphs, computing ontology-based term
+    similarity, rolling terms up to coarser resolutions, and performing
+    marker-gene over-representation analyses with bundled healthy human and
+    mouse CellMarkerAccordion marker annotations.
+License: GPL-3
+URL: https://github.com/WANGDI0212/CellOnTools
+BugReports: https://github.com/WANGDI0212/CellOnTools/issues
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Depends:
+    R (>= 4.1.0)
+Imports:
+    grid,
+    methods,
+    stats,
+    tools,
+    utils
+Suggests:
+    AnnotationHub,
+    clusterProfiler,
+    ggraph,
+    ggplot2,
+    igraph,
+    knitr,
+    ontologyIndex,
+    ontologySimilarity,
+    rmarkdown,
+    rols,
+    S4Vectors,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2

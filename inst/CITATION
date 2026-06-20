@@ -1,0 +1,43 @@
+citHeader("To cite CellOnTools in publications use:")
+
+year <- sub("-.*", "", meta$Date)
+if (length(year) == 0L || is.na(year) || !nzchar(year))
+  year <- format(Sys.Date(), "%Y")
+vers <- paste("R package version", meta$Version)
+
+bibentry(
+  bibtype  = "Manual",
+  title    = "CellOnTools: Tools for Cell Ontology Mapping, Hierarchy, Similarity, and Marker Enrichment",
+  author   = person(given = "Di", family = "Wang"),
+  year     = year,
+  note     = vers,
+  url      = "https://github.com/WANGDI0212/CellOnTools",
+  textVersion = paste0(
+    "Di Wang (", year, "). CellOnTools: Tools for Cell Ontology Mapping, ",
+    "Hierarchy, Similarity, and Marker Enrichment. ", vers,
+    ". https://github.com/WANGDI0212/CellOnTools"
+  )
+)
+
+bibentry(
+  bibtype = "Article",
+  header  = paste("When using the bundled marker annotations via CLmarkers(),",
+                  "CLenricher() or CLcompareCluster(), please also cite the",
+                  "Cell Marker Accordion resource:"),
+  title   = "Cell Marker Accordion: interpretable single-cell and spatial omics annotation in health and disease",
+  author  = c(person("Emma", "Busarello"),
+              person("Giulia", "Biancon"),
+              person("Ilaria", "Cimignolo"),
+              person(family = "others")),
+  journal = "Nature Communications",
+  year    = "2025",
+  volume  = "16",
+  pages   = "5399",
+  doi     = "10.1038/s41467-025-60900-4",
+  textVersion = paste0(
+    "Busarello E, Biancon G, Cimignolo I, et al. (2025). ",
+    "Cell Marker Accordion: interpretable single-cell and spatial omics ",
+    "annotation in health and disease. Nature Communications, 16, 5399. ",
+    "doi:10.1038/s41467-025-60900-4"
+  )
+)

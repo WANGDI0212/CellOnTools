@@ -1,0 +1,9 @@
+^\.gitignore$
+^\.gitattributes$
+^\.github$
+^cran-comments\.md$
+^\.Rproj\.user$
+^.*\.Rproj$
+^LICENSE\.md$
+^doc$
+^Meta$

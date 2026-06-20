@@ -1,0 +1,222 @@
+#' Roll Up Cell Ontology Terms to Optimal Resolution
+#'
+#' @description
+#' Aggregates a set of CL terms by replacing groups of related terms with their
+#' most specific shared ancestor, subject to a minimum group-size constraint.
+#'
+#' @section Depth convention and specificity:
+#' Throughout this package, **depth is synonymous with ancestor_count**:
+#'
+#' \deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+#'
+#' A term with a \emph{larger} ancestor_count is more specific (more granular).
+#' Roll-up prefers the most specific valid ancestor, i.e. the candidate with the
+#' largest ancestor_count that still covers at least \code{min_group_size} input
+#' terms.
+#'
+#' The \code{max_ancestor_count} filter removes candidate ancestors whose
+#' ancestor_count exceeds the threshold, preventing roll-up to overly specific
+#' intermediate nodes.
+#'
+#' @param ids Character vector of CL IDs to aggregate.  Duplicates are silently
+#'   removed (set semantics).
+#' @param clData An \code{ontology_index} object returned by \code{CLload()}.
+#' @param min_group_size Minimum number of input terms that must share an
+#'   ancestor for that ancestor to be used as a roll-up target (default: \code{2}).
+#' @param max_ancestor_count Upper bound on the ancestor_count of candidate
+#'   ancestors (default: \code{NULL}, no limit).  Ancestors with
+#'   \code{ancestor_count > max_ancestor_count} are excluded.
+#' @param return_mapping Logical; if \code{TRUE} (default), return a detailed
+#'   list; if \code{FALSE}, return a named character vector.
+#' @param verbose Logical; if \code{TRUE} (default), print progress messages.
+#'
+#' @return
+#' If \code{return_mapping = TRUE}, a list with:
+#' \describe{
+#'   \item{\code{mapping}}{Data frame with columns \code{original_id},
+#'     \code{original_label}, \code{rolled_id}, \code{rolled_label},
+#'     \code{was_rolled}.}
+#'   \item{\code{groups}}{Named list mapping each chosen ancestor to the input
+#'     terms it covers.}
+#'   \item{\code{rolled_terms}}{Character vector of unique rolled-up CL IDs.}
+#' }
+#' If \code{return_mapping = FALSE}, a named character vector mapping each
+#' original ID to its rolled-up ID.
+#'
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' clData <- CLload()
+#'
+#' ids <- c(
+#'   "CL:0000624",  # CD4-positive, alpha-beta T cell
+#'   "CL:0000625",  # CD8-positive, alpha-beta T cell
+#'   "CL:0000236",  # B cell
+#'   "CL:0000576",  # monocyte
+#'   "CL:0000623",  # natural killer cell
+#'   "CL:0000775",  # neutrophil
+#'   "CL:0000771",  # eosinophil
+#'   "CL:0000767"   # basophil
+#' )
+#'
+#' result <- CLrollup(ids, clData, min_group_size = 2)
+#' print(result$mapping[, c("original_label", "rolled_label", "was_rolled")])
+#'
+#' # Restrict to ancestors with ancestor_count <= 10
+#' result2 <- CLrollup(ids, clData, min_group_size = 2, max_ancestor_count = 10)
+#'
+#' # Return only the named mapping vector
+#' CLrollup(ids, clData, return_mapping = FALSE)
+#' }
+CLrollup <- function(ids,
+                     clData,
+                     min_group_size     = 2L,
+                     max_ancestor_count = NULL,
+                     return_mapping     = TRUE,
+                     verbose            = TRUE) {
+
+  # ---- Validate inputs ----
+  .validate_cldata(clData)
+
+  if (!requireNamespace("ontologyIndex", quietly = TRUE)) {
+    stop("Package 'ontologyIndex' is required. Install with:\n",
+         "  BiocManager::install('ontologyIndex')", call. = FALSE)
+  }
+
+  ids <- .validate_ids(ids, clData = clData, unique_only = TRUE,
+                       allow_unknown = FALSE, warn_invalid = TRUE)
+
+  if (!is.numeric(min_group_size) || length(min_group_size) != 1L ||
+      is.na(min_group_size) || min_group_size < 1) {
+    stop("`min_group_size` must be a positive integer.", call. = FALSE)
+  }
+  min_group_size <- as.integer(min_group_size)
+
+  if (min_group_size > length(ids)) {
+    warning("`min_group_size` (", min_group_size,
+            ") is larger than the number of input IDs (", length(ids),
+            "). No roll-up will occur.", call. = FALSE)
+  }
+
+  if (!is.null(max_ancestor_count)) {
+    if (!is.numeric(max_ancestor_count) || length(max_ancestor_count) != 1L ||
+        is.na(max_ancestor_count) || max_ancestor_count < 1) {
+      stop("`max_ancestor_count` must be NULL or a positive integer.", call. = FALSE)
+    }
+    max_ancestor_count <- as.integer(max_ancestor_count)
+  }
+
+  if (verbose) {
+    message("Rolling up ", length(ids), " terms...")
+    message("  min_group_size:     ", min_group_size)
+    if (!is.null(max_ancestor_count))
+      message("  max_ancestor_count: ", max_ancestor_count)
+  }
+
+  # ---- Build ancestor -> covered-input-terms map ----
+  all_ancestors <- lapply(ids, function(id) ontologyIndex::get_ancestors(clData, id))
+  names(all_ancestors) <- ids
+
+  unique_ancestors <- unique(unlist(all_ancestors, use.names = FALSE))
+
+  ancestor_to_terms <- lapply(unique_ancestors, function(anc) {
+    ids[vapply(all_ancestors, function(x) anc %in% x, logical(1L))]
+  })
+  names(ancestor_to_terms) <- unique_ancestors
+
+  # ---- Filter by minimum group size ----
+  ancestor_to_terms <- ancestor_to_terms[lengths(ancestor_to_terms) >= min_group_size]
+
+  # ---- Remove redundant (more general) ancestors ----
+  # When a parent candidate covers exactly the same set of input terms as a
+  # child candidate, the parent is redundant - the child already captures the
+  # same grouping at finer resolution.  Drop the parent, keep the child.
+  if (length(ancestor_to_terms) > 0L) {
+    keep <- rep(TRUE, length(ancestor_to_terms))
+    names(keep) <- names(ancestor_to_terms)
+
+    for (anc in names(ancestor_to_terms)) {
+      if (!keep[anc]) next
+      covered <- ancestor_to_terms[[anc]]
+      # Proper ancestors of `anc` that are also candidates
+      anc_proper_ancestors <- setdiff(ontologyIndex::get_ancestors(clData, anc), anc)
+      for (parent in intersect(anc_proper_ancestors, names(ancestor_to_terms))) {
+        if (keep[parent] && setequal(ancestor_to_terms[[parent]], covered)) {
+          keep[parent] <- FALSE   # parent is redundant - drop it
+        }
+      }
+    }
+    ancestor_to_terms <- ancestor_to_terms[keep]
+  }
+
+  # ---- Apply max_ancestor_count filter ----
+  if (!is.null(max_ancestor_count) && length(ancestor_to_terms) > 0L) {
+    anc_counts <- .get_ancestor_count_vec(names(ancestor_to_terms), clData)
+    before     <- length(ancestor_to_terms)
+    ancestor_to_terms <- ancestor_to_terms[anc_counts <= max_ancestor_count]
+    if (verbose && length(ancestor_to_terms) < before) {
+      message("  Filtered out ", before - length(ancestor_to_terms),
+              " ancestor(s) exceeding max_ancestor_count")
+    }
+  }
+
+  # ---- Sort candidates: prefer most specific (largest ancestor_count),
+  #      break ties by fewest covered terms, then by ID for stability ----
+  if (length(ancestor_to_terms) > 0L) {
+    anc_counts <- .get_ancestor_count_vec(names(ancestor_to_terms), clData)
+    ord <- order(
+      -anc_counts,                          # largest ancestor_count first
+      lengths(ancestor_to_terms),           # fewest covered terms first
+      names(ancestor_to_terms)              # alphabetical for stability
+    )
+    ancestor_to_terms <- ancestor_to_terms[ord]
+  }
+
+  # ---- Greedy assignment: most specific ancestor wins ----
+  term_mapping   <- stats::setNames(ids, ids)   # identity mapping
+  already_mapped <- character(0)
+
+  for (anc in names(ancestor_to_terms)) {
+    unmapped <- setdiff(ancestor_to_terms[[anc]], already_mapped)
+    if (length(unmapped) >= min_group_size) {
+      term_mapping[unmapped] <- anc
+      already_mapped <- c(already_mapped, unmapped)
+    }
+  }
+
+  # ---- Prepare output ----
+  if (return_mapping) {
+    mapping_df <- data.frame(
+      original_id    = names(term_mapping),
+      original_label = clData$name[names(term_mapping)],
+      rolled_id      = unname(term_mapping),
+      rolled_label   = clData$name[unname(term_mapping)],
+      was_rolled     = names(term_mapping) != unname(term_mapping),
+      stringsAsFactors = FALSE,
+      row.names        = NULL
+    )
+
+    if (verbose) {
+      n_rolled <- sum(mapping_df$was_rolled)
+      n_final  <- length(unique(mapping_df$rolled_id))
+      message("Roll-up completed:")
+      message("  Input terms:  ", length(ids))
+      message("  Rolled up:    ", n_rolled)
+      message("  Final groups: ", n_final)
+    }
+
+    return(list(
+      mapping      = mapping_df,
+      groups       = ancestor_to_terms,
+      rolled_terms = unique(unname(term_mapping))
+    ))
+  }
+
+  if (verbose) {
+    n_rolled <- sum(names(term_mapping) != unname(term_mapping))
+    message("Roll-up completed: ", n_rolled, " term(s) rolled up.")
+  }
+
+  term_mapping
+}
