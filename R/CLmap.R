@@ -88,11 +88,32 @@ CLmap <- function(query,
   # Private helpers
   # ========================================================================
 
-  .normalize_query <- function(q) {
-    q <- tolower(gsub("[_/\\-]+", " ", q))
-    q <- gsub("\\bcells\\b", "cell", q)
+  .canonical_query <- function(q) {
+    q <- gsub("[_/\\-]+", " ", q)
+    q <- gsub("\\bcells\\b", "cell", q, ignore.case = TRUE)
     q <- gsub("\\s+", " ", q)
     trimws(q)
+  }
+
+  .normalize_query <- function(q) {
+    tolower(.canonical_query(q))
+  }
+
+  .restore_common_cell_case <- function(q) {
+    q <- gsub("\\bnkt\\b", "NKT", q, ignore.case = TRUE)
+    q <- gsub("\\bnk\\b",  "NK",  q, ignore.case = TRUE)
+    q <- gsub("\\bcd([0-9]+)\\b", "CD\\1", q, ignore.case = TRUE)
+    q <- gsub("\\bt cell\\b", "T cell", q, ignore.case = TRUE)
+    q <- gsub("\\bb cell\\b", "B cell", q, ignore.case = TRUE)
+    q
+  }
+
+  .search_terms <- function(q_display) {
+    unique(c(
+      trimws(q_display),
+      .canonical_query(q_display),
+      .restore_common_cell_case(.canonical_query(q_display))
+    ))
   }
 
   # Local reranking: exact > normalised-exact > startsWith > contains > OLS order
@@ -118,42 +139,66 @@ CLmap <- function(query,
   }
 
   .search_one <- function(q_display, q_actual, max_results, verbose) {
-    tryCatch({
-      obj <- rols::OlsSearch(q = q_actual, ontology = "cl", type = "class",
-                             groupField = TRUE, obsoletes = FALSE)
-      df  <- as(rols::olsSearch(obj), "data.frame")
+    rows <- max(20L, max_results)
+    terms <- .search_terms(q_display)
+    errors <- character(0)
+    dfs <- list()
 
-      if (!all(c("label", "obo_id") %in% colnames(df))) {
-        stop("OLS result missing required columns: label, obo_id.")
+    for (term in terms) {
+      df <- tryCatch({
+        obj <- rols::OlsSearch(q = term, ontology = "cl", type = "class",
+                               groupField = TRUE, obsoletes = FALSE,
+                               rows = rows)
+        df  <- as(rols::olsSearch(obj), "data.frame")
+
+        if (!all(c("label", "obo_id") %in% colnames(df))) {
+          stop("OLS result missing required columns: label, obo_id.")
+        }
+
+        df_cl <- df[grep("^CL:", df$obo_id), c("label", "obo_id"), drop = FALSE]
+        df_cl
+      }, error = function(e) {
+        errors <<- c(errors, paste0(term, ": ", conditionMessage(e)))
+        NULL
+      })
+
+      if (!is.null(df) && nrow(df) > 0L) {
+        dfs[[length(dfs) + 1L]] <- df
       }
+    }
 
-      df_cl <- df[grep("^CL:", df$obo_id), c("label", "obo_id"), drop = FALSE]
-      df_cl <- df_cl[!duplicated(df_cl[, c("label", "obo_id")]), , drop = FALSE]
-
-      if (nrow(df_cl) == 0L) {
-        return(list(status = "no_match", error = NA_character_, data = NULL))
+    if (length(dfs) == 0L) {
+      if (length(errors) > 0L) {
+        err <- paste(unique(errors), collapse = " | ")
+        if (verbose) warning("Search failed for '", q_actual, "': ",
+                             err, call. = FALSE)
+        return(list(status = "api_error", error = err, data = NULL))
       }
+      return(list(status = "no_match", error = NA_character_, data = NULL))
+    }
 
-      df_cl <- .rerank(df_cl, q_actual)
-      df_cl <- df_cl[seq_len(min(nrow(df_cl), max_results)), , drop = FALSE]
+    df_cl <- do.call(rbind, dfs)
+    df_cl <- df_cl[!duplicated(df_cl[, c("label", "obo_id")]), , drop = FALSE]
 
-      list(
-        status = "matched",
-        error  = NA_character_,
-        data   = data.frame(
-          query_display = rep(q_display, nrow(df_cl)),
-          query_actual  = rep(q_actual,  nrow(df_cl)),
-          cl_label      = df_cl$label,
-          cl_id         = df_cl$obo_id,
-          rank          = seq_len(nrow(df_cl)),
-          stringsAsFactors = FALSE
-        )
+    if (nrow(df_cl) == 0L) {
+      return(list(status = "no_match", error = NA_character_, data = NULL))
+    }
+
+    df_cl <- .rerank(df_cl, q_actual)
+    df_cl <- df_cl[seq_len(min(nrow(df_cl), max_results)), , drop = FALSE]
+
+    list(
+      status = "matched",
+      error  = NA_character_,
+      data   = data.frame(
+        query_display = rep(q_display, nrow(df_cl)),
+        query_actual  = rep(q_actual,  nrow(df_cl)),
+        cl_label      = df_cl$label,
+        cl_id         = df_cl$obo_id,
+        rank          = seq_len(nrow(df_cl)),
+        stringsAsFactors = FALSE
       )
-    }, error = function(e) {
-      if (verbose) warning("Search failed for '", q_actual, "': ",
-                           conditionMessage(e), call. = FALSE)
-      list(status = "api_error", error = conditionMessage(e), data = NULL)
-    })
+    )
   }
 
   # ========================================================================

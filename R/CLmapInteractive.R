@@ -92,11 +92,32 @@ CLmapInteractive <- function(query,
   # Private helpers
   # ========================================================================
 
-  .normalize_query <- function(q) {
-    q <- tolower(gsub("[_/\\-]+", " ", q))
-    q <- gsub("\\bcells\\b", "cell", q)
+  .canonical_query <- function(q) {
+    q <- gsub("[_/\\-]+", " ", q)
+    q <- gsub("\\bcells\\b", "cell", q, ignore.case = TRUE)
     q <- gsub("\\s+", " ", q)
     trimws(q)
+  }
+
+  .normalize_query <- function(q) {
+    tolower(.canonical_query(q))
+  }
+
+  .restore_common_cell_case <- function(q) {
+    q <- gsub("\\bnkt\\b", "NKT", q, ignore.case = TRUE)
+    q <- gsub("\\bnk\\b",  "NK",  q, ignore.case = TRUE)
+    q <- gsub("\\bcd([0-9]+)\\b", "CD\\1", q, ignore.case = TRUE)
+    q <- gsub("\\bt cell\\b", "T cell", q, ignore.case = TRUE)
+    q <- gsub("\\bb cell\\b", "B cell", q, ignore.case = TRUE)
+    q
+  }
+
+  .search_terms <- function(q_display) {
+    unique(c(
+      trimws(q_display),
+      .canonical_query(q_display),
+      .restore_common_cell_case(.canonical_query(q_display))
+    ))
   }
 
   # Local reranking (same logic as CLmap)
@@ -125,48 +146,71 @@ CLmapInteractive <- function(query,
                   candidates = .empty_candidates()))
     }
     query_actual <- .normalize_query(query_display)
+    rows <- max(20L, max_results)
+    terms <- .search_terms(query_display)
+    errors <- character(0)
+    dfs <- list()
 
-    tryCatch({
-      obj <- rols::OlsSearch(q = query_actual, ontology = "cl", type = "class",
-                             groupField = TRUE, obsoletes = FALSE)
-      df  <- as(rols::olsSearch(obj), "data.frame")
+    for (term in terms) {
+      df <- tryCatch({
+        obj <- rols::OlsSearch(q = term, ontology = "cl", type = "class",
+                               groupField = TRUE, obsoletes = FALSE,
+                               rows = rows)
+        df  <- as(rols::olsSearch(obj), "data.frame")
 
-      if (!all(c("label", "obo_id") %in% colnames(df))) {
-        stop("OLS result missing required columns.")
+        if (!all(c("label", "obo_id") %in% colnames(df))) {
+          stop("OLS result missing required columns.")
+        }
+
+        df[grep("^CL:", df$obo_id), c("label", "obo_id"), drop = FALSE]
+      }, error = function(e) {
+        errors <<- c(errors, paste0(term, ": ", conditionMessage(e)))
+        NULL
+      })
+
+      if (!is.null(df) && nrow(df) > 0L) {
+        dfs[[length(dfs) + 1L]] <- df
       }
+    }
 
-      df_cl <- df[grep("^CL:", df$obo_id), c("label", "obo_id"), drop = FALSE]
-      df_cl <- df_cl[!duplicated(df_cl[, c("label", "obo_id")]), , drop = FALSE]
-      colnames(df_cl) <- c("cl_label", "cl_id")
-
-      if (nrow(df_cl) == 0L) {
+    if (length(dfs) == 0L) {
+      if (length(errors) > 0L) {
         return(list(query_display = query_display, query_actual = query_actual,
-                    status = "no_match", error_message = NA_character_,
+                    status = "api_error",
+                    error_message = paste(unique(errors), collapse = " | "),
                     candidates = .empty_candidates()))
       }
+      return(list(query_display = query_display, query_actual = query_actual,
+                  status = "no_match", error_message = NA_character_,
+                  candidates = .empty_candidates()))
+    }
 
-      df_cl <- .rerank(df_cl, query_actual)
-      n_take <- min(nrow(df_cl), max_results)
-      df_cl  <- df_cl[seq_len(n_take), , drop = FALSE]
+    df_cl <- do.call(rbind, dfs)
+    df_cl <- df_cl[!duplicated(df_cl[, c("label", "obo_id")]), , drop = FALSE]
+    colnames(df_cl) <- c("cl_label", "cl_id")
 
-      candidates <- data.frame(
-        query_display = rep(query_display, nrow(df_cl)),
-        query_actual  = rep(query_actual,  nrow(df_cl)),
-        cl_label      = df_cl$cl_label,
-        cl_id         = df_cl$cl_id,
-        rank          = seq_len(nrow(df_cl)),
-        stringsAsFactors = FALSE
-      )
+    if (nrow(df_cl) == 0L) {
+      return(list(query_display = query_display, query_actual = query_actual,
+                  status = "no_match", error_message = NA_character_,
+                  candidates = .empty_candidates()))
+    }
 
-      list(query_display = query_display, query_actual = query_actual,
-           status = "matched", error_message = NA_character_,
-           candidates = candidates)
+    df_cl <- .rerank(df_cl, query_actual)
+    n_take <- min(nrow(df_cl), max_results)
+    df_cl  <- df_cl[seq_len(n_take), , drop = FALSE]
 
-    }, error = function(e) {
-      list(query_display = query_display, query_actual = query_actual,
-           status = "api_error", error_message = conditionMessage(e),
-           candidates = .empty_candidates())
-    })
+    candidates <- data.frame(
+      query_display = rep(query_display, nrow(df_cl)),
+      query_actual  = rep(query_actual,  nrow(df_cl)),
+      cl_label      = df_cl$cl_label,
+      cl_id         = df_cl$cl_id,
+      rank          = seq_len(nrow(df_cl)),
+      stringsAsFactors = FALSE
+    )
+
+    list(query_display = query_display, query_actual = query_actual,
+         status = "matched", error_message = NA_character_,
+         candidates = candidates)
   }
 
   .display_candidates <- function(q_orig, q_display, q_actual, candidates,
