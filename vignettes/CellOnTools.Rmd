@@ -44,6 +44,20 @@ to common CL operations together with marker-gene over-representation analysis:
 library(CellOnTools)
 ```
 
+## Choosing a workflow
+
+CellOnTools functions are designed to be combined rather than used in isolation.
+The table below is a useful starting point:
+
+| If you have... | Use... | Typical output |
+|---|---|---|
+| Reviewed CL IDs | `CLid2label()`, `CLdepth()`, `CLancestors()` | Human-readable labels, specificity summaries, parent terms |
+| Reviewed cell-type labels | `CLlabel2id()` | Stable CL IDs for metadata tables |
+| Shorthand or free-text labels | `CLsearchLabel()`, `CLmap()`, `CLmapInteractive()` | Search evidence or OLS-ranked candidate CL terms |
+| Many fine-grained annotations | `CLsuggestResolution()`, `CLrollup()` | A coarser, ontology-aware annotation layer |
+| Several annotated clusters | `CLsimilarityMatrix()`, `CLcommonAncestor()` | Pairwise similarity and shared biological neighbourhoods |
+| Marker genes per cluster | `CLenricher()`, `CLcompareCluster()` | Marker-based evidence for candidate CL terms |
+
 ## A note on "depth"
 
 Throughout the package, **depth is defined as the ancestor count**: the number
@@ -66,6 +80,10 @@ clData <- CLload(yearAdded = "2023")
 CLdownload(dest_file = "cl.obo")
 clData <- CLload(local_obo = "cl.obo", prefer_local = TRUE)
 ```
+
+For reproducible analyses, the local OBO path is often preferable: it records
+exactly which ontology file was used, avoids AnnotationHub availability changes,
+and makes reruns easier to audit.
 
 To keep this vignette fast and free of network access, the examples below use a
 small, hand-built ontology that mimics the structure of CL:
@@ -131,6 +149,23 @@ warning per problem class (use `strict = TRUE` to error instead):
 suppressWarnings(CLid2label(c("CL:0000300", "CL:9999999", "not_an_id"), clData))
 ```
 
+In a real annotation table, use `strict = TRUE` when reviewed labels are
+expected to exist in the ontology. This fails early if a label has drifted, was
+misspelled, or belongs to a different ontology release:
+
+```{r strict-real, eval = FALSE}
+annotation_dictionary <- data.frame(
+  cluster_label = c("B", "NK", "Platelet"),
+  reviewed_cl_label = c("B cell", "natural killer cell", "platelet")
+)
+
+annotation_dictionary$cl_id <- CLlabel2id(
+  annotation_dictionary$reviewed_cl_label,
+  clData,
+  strict = TRUE
+)
+```
+
 ## Ancestors, descendants and depth
 
 ```{r ancestry, eval = has_oi}
@@ -166,6 +201,11 @@ rolled$mapping[, c("original_label", "rolled_label", "was_rolled")]
 `CLsuggestResolution()` sweeps the roll-up parameters and recommends the setting
 whose number of groups is closest to a target.
 
+For single-cell annotations, this is useful when a fine-grained annotation layer
+is too detailed for a figure or cross-dataset comparison. For example, CD4 T,
+CD8 T, B, and NK annotations can be kept as reviewed CL IDs while a second
+metadata column stores their broader roll-up term, such as `lymphocyte`.
+
 ## Semantic similarity
 
 Resnik and Lin similarities are available when **ontologySimilarity** is
@@ -179,6 +219,12 @@ CLsimilarity("CL:0000300", "CL:0000400", clData,
 CLsimilarityMatrix(c("CL:0000300", "CL:0000400", "CL:0000350"),
                    clData = clData, information_content = ic, verbose = FALSE)
 ```
+
+`CLsimilarity()` and `CLsimilarityMatrix()` are helpful for asking whether two
+annotations are close in CL even when their labels are not identical. Lin
+similarity is bounded between 0 and 1, which makes it convenient for summaries
+and heatmaps; Resnik similarity is often useful when you want an
+information-content score for the shared ancestor itself.
 
 ## Hierarchy plots
 
@@ -211,9 +257,66 @@ res <- CLenricher(
 head(as.data.frame(res)[, c("ID", "Description", "p.adjust", "Count")], 5)
 ```
 
-`CLcompareCluster()` extends this to several gene sets at once (e.g. marker
-genes per cluster from a single-cell experiment), returning a
-`compareClusterResult` that integrates with **enrichplot** visualisations.
+The default `universe = NULL` uses all genes present in the bundled marker
+database for the selected species. If your experiment measured a restricted
+panel, pass the measured genes as `universe` so the enrichment background
+matches the assay.
+
+`CLcompareCluster()` extends enrichment to several gene sets at once. This is
+the usual shape of a single-cell workflow after marker detection:
+
+```{r comparecluster-small, eval = has_cp}
+cluster_markers <- list(
+  "T-like"    = c("CD3D", "CD3E", "CD8A", "IL7R"),
+  "B-like"    = c("MS4A1", "CD79A", "CD79B", "CD74"),
+  "Mono-like" = c("LYZ", "S100A8", "S100A9", "FCN1")
+)
+
+cc <- CLcompareCluster(cluster_markers, geneType = "symbol", species = "human")
+head(as.data.frame(cc)[, c("Cluster", "ID", "Description", "p.adjust")], 8)
+```
+
+When no term passes the requested cutoffs, `CLenricher()` may return `NULL` and
+`CLcompareCluster()` may contain no rows. In scripted workflows, check this
+before plotting.
+
+## Case-study lessons from pbmc3k
+
+The package documentation was expanded using a manuscript-style pbmc3k analysis
+that connected Seurat annotations to Cell Ontology, explored ontology
+relationships, rolled annotations to a coarser layer, and compared the reviewed
+labels with marker-gene enrichment evidence.
+
+Key results from that run:
+
+| Quantity | Value |
+|---|---:|
+| Processed pbmc3k cells | 2,638 |
+| Seurat annotation labels resolved to CL | 9 / 9 |
+| CL terms loaded from the local OBO file | 18,460 |
+| Reviewed annotations after roll-up | 9 to 3 groups |
+| Seurat marker rows used for enrichment | 3,456 |
+| `CLcompareCluster()` enrichment rows | 674 |
+| Top enrichment exact CL-ID matches | 1 / 9 |
+| Median Lin similarity between top enriched and reviewed terms | 0.790 |
+
+The exact-match number is intentionally not the only success criterion. Marker
+enrichment often returns a nearby parent, child, or sibling term. For example,
+the reviewed annotation `CD14-low, CD16-positive monocyte` was supported by a
+top enriched term `non-classical monocyte` with high Lin similarity. This is why
+the recommended pattern is:
+
+1. keep a reviewed annotation dictionary with explicit CL IDs;
+2. store CL IDs and labels back into cell metadata;
+3. use marker enrichment as evidence and quality control;
+4. use semantic similarity to quantify near-matches rather than relying only on
+   exact ID equality.
+
+For a fuller single-cell workflow template, see:
+
+```{r pbmc-vignette-link, eval = FALSE}
+vignette("pbmc3k-workflow", package = "CellOnTools")
+```
 
 ## Mapping free-text names to CL terms
 
@@ -223,6 +326,19 @@ require network access and the **rols** package:
 
 ```{r map-network, eval = FALSE}
 CLmap(c("T cell", "B cell", "classical monocyte"), returnType = "id")
+```
+
+Because OLS is network-dependent, manuscript and pipeline code should record
+failures rather than allowing one API outage to erase local results:
+
+```{r map-guard, eval = FALSE}
+ols_candidates <- tryCatch(
+  CLmap(c("naive CD4-positive alpha-beta T cell", "CD16-positive monocyte"),
+        max_results = 3, returnType = "all", verbose = FALSE),
+  error = function(e) {
+    data.frame(error_message = conditionMessage(e))
+  }
+)
 ```
 
 ## Session information

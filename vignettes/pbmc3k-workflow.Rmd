@@ -1,0 +1,348 @@
+---
+title: "PBMC3K annotation workflow with CellOnTools"
+author: "Di Wang"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{PBMC3K annotation workflow with CellOnTools}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Purpose
+
+This vignette shows a manuscript-style workflow for using **CellOnTools** with a
+single-cell object. It is based on a pbmc3k case study in which Seurat cluster
+annotations were standardised to Cell Ontology (CL), written back to cell
+metadata, rolled up to broader ontology terms, and checked against marker-gene
+enrichment.
+
+The code chunks are intentionally not evaluated during package checks because
+they require SeuratData downloads, optional Bioconductor packages, plotting
+packages, and network access for some mapping steps. Treat this vignette as a
+template for your own analysis scripts.
+
+```{r libraries}
+library(CellOnTools)
+library(Seurat)
+library(SeuratData)
+library(ggplot2)
+```
+
+Recommended optional packages for the full workflow:
+
+| Step | Packages |
+|---|---|
+| Local CL loading | `ontologyIndex` |
+| Semantic similarity | `ontologySimilarity` |
+| Enrichment | `clusterProfiler`, `enrichplot` |
+| Hierarchy plotting | `ggraph`, `igraph`, `ggplot2` |
+| OLS candidate search | `rols` |
+
+## Load the ontology and pbmc3k
+
+For a manuscript or pipeline, prefer a local OBO file so that the ontology
+release is explicit and rerunnable:
+
+```{r load}
+out_dir <- "pbmc3k_results"
+dir.create(out_dir, showWarnings = FALSE)
+
+obo_file <- file.path(out_dir, "cl.obo")
+if (!file.exists(obo_file)) {
+  CLdownload(dest_file = obo_file, overwrite = TRUE)
+}
+cl_data <- CLload(local_obo = obo_file, prefer_local = TRUE, verbose = FALSE)
+
+pbmc_raw <- LoadData("pbmc3k")
+pbmc <- LoadData("pbmc3k", type = "pbmc3k.final")
+DefaultAssay(pbmc_raw) <- "RNA"
+DefaultAssay(pbmc) <- "RNA"
+Idents(pbmc) <- pbmc$seurat_annotations
+```
+
+The reference run behind this vignette used 2,700 raw pbmc3k cells and 2,638
+processed `pbmc3k.final` cells.
+
+## Build a reviewed CL dictionary
+
+Start with a small table that keeps the original labels, search labels, and
+reviewed CL labels separate. This makes the mapping auditable:
+
+```{r reviewed-dictionary}
+pbmc_terms <- data.frame(
+  seurat_label = c("Naive CD4 T", "Memory CD4 T", "CD14+ Mono", "B", "CD8 T",
+                   "FCGR3A+ Mono", "NK", "DC", "Platelet"),
+  plot_label = c("Naive CD4 T", "Memory CD4 T", "CD14+ Mono", "B cell",
+                 "CD8 T", "CD16+ Mono", "NK", "DC", "Platelet"),
+  query_label = c("naive CD4-positive alpha-beta T cell",
+                  "memory CD4-positive alpha-beta T cell",
+                  "CD14-positive monocyte",
+                  "B cell",
+                  "CD8-positive alpha-beta T cell",
+                  "CD16-positive monocyte",
+                  "natural killer cell",
+                  "dendritic cell",
+                  "platelet"),
+  reviewed_cl_label = c(
+    "naive thymus-derived CD4-positive, alpha-beta T cell",
+    "CD4-positive, alpha-beta memory T cell",
+    "CD14-positive monocyte",
+    "B cell",
+    "CD8-positive, alpha-beta T cell",
+    "CD14-low, CD16-positive monocyte",
+    "natural killer cell",
+    "dendritic cell",
+    "platelet"
+  )
+)
+```
+
+Use local search and OLS candidates to audit shorthand labels before finalising
+the reviewed dictionary:
+
+```{r search-and-map}
+search_hits <- CLsearchLabel(
+  c("CD4-positive", "monocyte", "natural killer cell",
+    "dendritic cell", "platelet"),
+  cl_data,
+  max_results = 8
+)
+
+ols_candidates <- tryCatch(
+  CLmap(pbmc_terms$query_label, max_results = 3,
+        returnType = "all", verbose = FALSE),
+  error = function(e) {
+    data.frame(error_message = conditionMessage(e))
+  }
+)
+```
+
+Then resolve the reviewed labels to CL IDs and add ontology metadata:
+
+```{r resolve-labels}
+pbmc_terms$cl_id <- CLlabel2id(pbmc_terms$reviewed_cl_label,
+                               cl_data, strict = TRUE)
+pbmc_terms$cl_label <- CLid2label(pbmc_terms$cl_id, cl_data)
+pbmc_terms$cl_depth <- CLdepth(pbmc_terms$cl_id, cl_data)
+pbmc_terms$n_ancestors <- lengths(CLancestors(pbmc_terms$cl_id, cl_data))
+pbmc_terms$n_descendants <- lengths(CLdescendants(pbmc_terms$cl_id, cl_data))
+```
+
+The reference run resolved all 9 labels:
+
+| Seurat label | Cells | CL ID | CL label | Depth |
+|---|---:|---|---|---:|
+| Naive CD4 T | 697 | `CL:0000895` | naive thymus-derived CD4-positive, alpha-beta T cell | 21 |
+| Memory CD4 T | 483 | `CL:0000897` | CD4-positive, alpha-beta memory T cell | 21 |
+| CD14+ Mono | 480 | `CL:0001054` | CD14-positive monocyte | 23 |
+| B | 344 | `CL:0000236` | B cell | 16 |
+| CD8 T | 271 | `CL:0000625` | CD8-positive, alpha-beta T cell | 19 |
+| FCGR3A+ Mono | 162 | `CL:0002396` | CD14-low, CD16-positive monocyte | 25 |
+| NK | 155 | `CL:0000623` | natural killer cell | 17 |
+| DC | 32 | `CL:0000451` | dendritic cell | 19 |
+| Platelet | 14 | `CL:0000233` | platelet | 15 |
+
+## Write CL terms back to cell metadata
+
+Keep both the original annotation and the CL-standardised annotation. This
+preserves provenance and makes downstream plotting straightforward:
+
+```{r metadata}
+id_by_label <- setNames(pbmc_terms$cl_id, pbmc_terms$seurat_label)
+label_by_id <- setNames(pbmc_terms$cl_label, pbmc_terms$cl_id)
+plot_by_id <- setNames(pbmc_terms$plot_label, pbmc_terms$cl_id)
+depth_by_id <- setNames(pbmc_terms$cl_depth, pbmc_terms$cl_id)
+
+pbmc$cellontools_cl_id <- unname(id_by_label[as.character(pbmc$seurat_annotations)])
+pbmc$cellontools_cl_label <- unname(label_by_id[pbmc$cellontools_cl_id])
+pbmc$cellontools_cl_plot_label <- unname(plot_by_id[pbmc$cellontools_cl_id])
+pbmc$cellontools_cl_depth <- unname(depth_by_id[pbmc$cellontools_cl_id])
+
+DimPlot(pbmc, group.by = "cellontools_cl_plot_label",
+        label = TRUE, repel = TRUE) +
+  NoLegend()
+```
+
+## Explore ontology relationships
+
+Once annotations are CL IDs, you can inspect shared ancestors, hierarchy
+subgraphs, and semantic similarity:
+
+```{r relationships}
+hier <- CLhierarchy(pbmc_terms$cl_id, cl_data,
+                    include_ancestors = TRUE,
+                    max_ancestor_count = NULL)
+
+CLhierarchyPlot(pbmc_terms$cl_id, cl_data,
+                include_ancestors = TRUE,
+                max_ancestor_count = NULL,
+                show_id = FALSE)
+
+ic <- ontologySimilarity::descendants_IC(cl_data)
+sim_lin <- CLsimilarityMatrix(pbmc_terms$cl_id, clData = cl_data,
+                              method = "lin",
+                              information_content = ic,
+                              verbose = FALSE)
+```
+
+The most similar reviewed annotation pairs in the reference run were
+biologically coherent:
+
+| Label 1 | Label 2 | Lin similarity | Most specific common ancestor |
+|---|---|---:|---|
+| CD14+ Mono | CD16+ Mono | 0.911 | CD14-positive monocyte |
+| Memory CD4 T | CD8 T | 0.758 | mature alpha-beta T cell |
+| Naive CD4 T | Memory CD4 T | 0.712 | CD4-positive, alpha-beta T cell |
+| B cell | NK | 0.689 | lymphocyte |
+| CD14+ Mono | DC | 0.676 | mononuclear phagocyte |
+
+## Roll annotations up to broader terms
+
+Use `CLsuggestResolution()` to sweep candidate roll-up settings, then apply the
+chosen setting with `CLrollup()`:
+
+```{r rollup}
+suggestion <- CLsuggestResolution(
+  pbmc_terms$cl_id,
+  cl_data,
+  target_groups = 3,
+  max_ancestor_count_values = c(16L, 17L, 18L, 19L, 20L, 21L, 22L),
+  verbose = FALSE
+)
+
+roll <- CLrollup(pbmc_terms$cl_id, cl_data,
+                 min_group_size = 2L,
+                 max_ancestor_count = 17L,
+                 verbose = FALSE)
+
+roll_map <- roll$mapping
+rollup_by_id <- setNames(roll_map$rolled_label, roll_map$original_id)
+pbmc$cellontools_rollup_label <- unname(rollup_by_id[pbmc$cellontools_cl_id])
+```
+
+The selected roll-up compressed 9 reviewed terms to 3 broader groups:
+
+| Original labels | Roll-up CL label |
+|---|---|
+| Naive CD4 T, Memory CD4 T, B, CD8 T, NK | lymphocyte |
+| CD14+ Mono, FCGR3A+ Mono, DC | mononuclear phagocyte |
+| Platelet | platelet |
+
+This gives you two annotation layers: the reviewed fine-grained CL terms for
+tables and the broader roll-up terms for overview plots or harmonisation across
+datasets.
+
+## Compare marker enrichment to reviewed labels
+
+Marker enrichment provides evidence for a cluster label. It should be interpreted
+alongside the reviewed CL dictionary, not used as a mechanical replacement for
+it.
+
+```{r markers}
+marker_db <- CLmarkers("human")
+data.frame(
+  marker_rows = nrow(marker_db),
+  unique_cl_terms = length(unique(marker_db$CL_ID)),
+  unique_marker_symbols = length(unique(marker_db$marker_symbol))
+)
+
+all_markers <- FindAllMarkers(pbmc, only.pos = TRUE, min.pct = 0.25,
+                              logfc.threshold = 0.25, verbose = FALSE)
+
+# Seurat has used both names across releases.
+lfc_col <- intersect(c("avg_log2FC", "avg_logFC"), colnames(all_markers))[1]
+if (is.na(lfc_col)) {
+  stop("Could not find a Seurat marker fold-change column.")
+}
+
+all_markers <- all_markers[order(all_markers$cluster,
+                                 all_markers$p_val_adj,
+                                 -all_markers[[lfc_col]]), ]
+
+top_markers <- do.call(rbind, lapply(split(all_markers, all_markers$cluster),
+                                     function(x) {
+  x <- x[order(x$p_val_adj, -x[[lfc_col]]), ]
+  utils::head(x, 25)
+}))
+
+gene_clusters <- split(top_markers$gene, top_markers$cluster)
+compare_res <- CLcompareCluster(gene_clusters,
+                                geneType = "symbol",
+                                species = "human",
+                                pvalueCutoff = 0.05,
+                                qvalueCutoff = 0.2)
+compare_df <- as.data.frame(compare_res)
+```
+
+In the reference run, the human marker resource contained 140,337 marker rows
+across 728 CL terms and 15,474 unique marker symbols. `FindAllMarkers()`
+returned 3,456 marker rows; `CLcompareCluster()` returned 674 enrichment rows.
+
+Top marker-enriched terms compared with the reviewed CL labels:
+
+| Seurat label | Top enriched term | Reviewed CL label | Exact ID match | Lin to reviewed |
+|---|---|---|---|---:|
+| Naive CD4 T | naive T cell | naive thymus-derived CD4-positive, alpha-beta T cell | FALSE | 0.911 |
+| Memory CD4 T | naive T cell | CD4-positive, alpha-beta memory T cell | FALSE | 0.645 |
+| CD14+ Mono | mononuclear phagocyte | CD14-positive monocyte | FALSE | 0.719 |
+| B | B-2 B cell | B cell | FALSE | 0.790 |
+| CD8 T | CD8-positive, alpha-beta memory T cell, CD45RO-positive | CD8-positive, alpha-beta T cell | FALSE | 0.851 |
+| FCGR3A+ Mono | non-classical monocyte | CD14-low, CD16-positive monocyte | FALSE | 0.890 |
+| NK | CD16-positive, CD56-dim natural killer cell, human | natural killer cell | FALSE | 0.781 |
+| DC | CD1c-positive myeloid dendritic cell | dendritic cell | FALSE | 0.711 |
+| Platelet | platelet | platelet | TRUE | 1.000 |
+
+Only 1 of 9 top enriched terms was an exact CL-ID match, but the median Lin
+similarity was 0.790. That is expected: marker databases may point to a nearby
+subtype, parent, or sibling term. Semantic similarity helps quantify whether
+the enrichment is biologically close to the reviewed annotation.
+
+## Defensive reporting checklist
+
+For reproducible scripts, export the intermediate tables as well as final
+figures:
+
+| Output | Why it helps |
+|---|---|
+| Reviewed label-to-CL dictionary | Makes annotation decisions auditable |
+| OLS/search candidate table | Records evidence for shorthand labels |
+| Cell metadata with CL ID, label, and depth | Carries standardised terms into downstream analysis |
+| Hierarchy nodes and edges | Makes ontology plots reproducible |
+| Similarity matrix | Quantifies near-matches between terms |
+| Roll-up mapping | Shows exactly which labels were collapsed |
+| `CLcompareCluster()` result table | Preserves marker evidence even when plots are filtered |
+| Enrichment-vs-reviewed comparison | Separates exact matches from semantically close support |
+
+Guard network-dependent or optional branches:
+
+```{r guards}
+ols_candidates <- tryCatch(
+  CLmap(pbmc_terms$query_label, max_results = 3,
+        returnType = "all", verbose = FALSE),
+  error = function(e) {
+    data.frame(status = "api_error",
+               error_message = conditionMessage(e))
+  }
+)
+
+if (requireNamespace("clusterProfiler", quietly = TRUE)) {
+  compare_res <- CLcompareCluster(gene_clusters,
+                                  geneType = "symbol",
+                                  species = "human")
+  compare_df <- as.data.frame(compare_res)
+  if (nrow(compare_df) == 0L) {
+    message("No enriched CL terms passed the selected cutoffs.")
+  }
+}
+```
