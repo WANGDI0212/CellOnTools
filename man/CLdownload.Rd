@@ -25,7 +25,9 @@ Invisibly returns the normalised path to the downloaded file.
 \description{
 Downloads the Cell Ontology OBO file from OBO Foundry (or a custom URL) and
 performs a lightweight header validation to confirm the file is a valid OBO
-document.
+document. For the default Cell Ontology URL, the function retries through a
+raw GitHub mirror and, on Windows, an external curl fallback to work around
+common SSL/revocation issues.
 }
 \examples{
 \dontrun{
