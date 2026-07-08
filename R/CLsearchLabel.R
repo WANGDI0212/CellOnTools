@@ -22,7 +22,7 @@
 #'   if specified.
 #'
 #' @return Data frame with columns \code{pattern}, \code{id}, \code{label},
-#'   \code{match_type}.  Returns zero rows (with a warning) if no matches are
+#'   \code{search_mode}.  Returns zero rows (with a warning) if no matches are
 #'   found.
 #'
 #' @export
@@ -87,7 +87,7 @@ CLsearchLabel <- function(pattern,
       } else {
         which(clData$name == pat)
       }
-      match_type <- "exact"
+      search_mode <- "exact"
     } else {
       # Partial match: literal (fixed = TRUE) or regex (fixed = FALSE)
       if (use_regex) {
@@ -97,7 +97,7 @@ CLsearchLabel <- function(pattern,
       } else {
         matches <- grep(pat, clData$name, fixed = TRUE)
       }
-      match_type <- if (use_regex) "regex" else "partial"
+      search_mode <- if (use_regex) "regex" else "partial"
     }
 
     if (length(matches) == 0L) {
@@ -105,7 +105,7 @@ CLsearchLabel <- function(pattern,
         pattern    = character(0),
         id         = character(0),
         label      = character(0),
-        match_type = character(0),
+        search_mode = character(0),
         stringsAsFactors = FALSE
       ))
     }
@@ -118,7 +118,7 @@ CLsearchLabel <- function(pattern,
       pattern    = pat,
       id         = clData$id[matches],
       label      = clData$name[matches],
-      match_type = match_type,
+      search_mode = search_mode,
       stringsAsFactors = FALSE
     )
   })

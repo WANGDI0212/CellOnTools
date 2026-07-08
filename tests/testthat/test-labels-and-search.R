@@ -18,11 +18,15 @@ test_that("CL label search supports literal and exact matching", {
   cl <- test_cl_data()
 
   partial <- CLsearchLabel("cell", cl)
+  expect_named(partial, c("pattern", "id", "label", "search_mode"))
   expect_setequal(partial$id, c("CL:0000000", "CL:0000001", "CL:0000003"))
+  expect_equal(unique(partial$search_mode), "partial")
 
   exact <- CLsearchLabel("T cell", cl, exact_match = TRUE)
   expect_equal(exact$id, "CL:0000003")
+  expect_equal(exact$search_mode, "exact")
 
   expect_warning(empty <- CLsearchLabel("does not exist", cl), "No matches found")
+  expect_named(empty, c("pattern", "id", "label", "search_mode"))
   expect_equal(nrow(empty), 0L)
 })

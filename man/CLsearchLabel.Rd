@@ -35,7 +35,7 @@ if specified.}
 }
 \value{
 Data frame with columns \code{pattern}, \code{id}, \code{label},
-\code{match_type}.  Returns zero rows (with a warning) if no matches are
+\code{search_mode}.  Returns zero rows (with a warning) if no matches are
 found.
 }
 \description{
