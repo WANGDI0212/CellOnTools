@@ -2,7 +2,7 @@
 % Please edit documentation in R/CLrollup.R
 \name{CLrollup}
 \alias{CLrollup}
-\title{Roll Up Cell Ontology Terms to Optimal Resolution}
+\title{Greedily Roll Up Cell Ontology Terms to a Coarser Resolution}
 \usage{
 CLrollup(
   ids,
@@ -14,22 +14,25 @@ CLrollup(
 )
 }
 \arguments{
-\item{ids}{Character vector of CL IDs to aggregate.  Duplicates are silently
-removed (set semantics).}
+\item{ids}{Character vector of CL IDs to aggregate.  \code{NA} and empty
+strings are removed, and duplicates are silently removed (set semantics).}
 
 \item{clData}{An \code{ontology_index} object returned by \code{CLload()}.}
 
-\item{min_group_size}{Minimum number of input terms that must share an
-ancestor for that ancestor to be used as a roll-up target (default: \code{2}).}
+\item{min_group_size}{Finite positive integer giving the minimum number of
+distinct input terms that must share an ancestor for that ancestor to be
+used as a roll-up target (default: \code{2}).}
 
-\item{max_ancestor_count}{Upper bound on the ancestor_count of candidate
-ancestors (default: \code{NULL}, no limit).  Ancestors with
+\item{max_ancestor_count}{\code{NULL} or a finite non-negative integer giving
+the upper bound on the ancestor_count of candidate ancestors (default:
+\code{NULL}, no limit).  Ancestors with
 \code{ancestor_count > max_ancestor_count} are excluded.}
 
-\item{return_mapping}{Logical; if \code{TRUE} (default), return a detailed
-list; if \code{FALSE}, return a named character vector.}
+\item{return_mapping}{A non-missing logical scalar; if \code{TRUE} (default),
+return a detailed list; if \code{FALSE}, return a named character vector.}
 
-\item{verbose}{Logical; if \code{TRUE} (default), print progress messages.}
+\item{verbose}{A non-missing logical scalar; if \code{TRUE} (default), print
+progress messages.}
 }
 \value{
 If \code{return_mapping = TRUE}, a list with:
@@ -37,16 +40,19 @@ If \code{return_mapping = TRUE}, a list with:
 \item{\code{mapping}}{Data frame with columns \code{original_id},
 \code{original_label}, \code{rolled_id}, \code{rolled_label},
 \code{was_rolled}.}
-\item{\code{groups}}{Named list mapping each chosen ancestor to the input
-terms it covers.}
+\item{\code{groups}}{Named list mapping each ancestor actually selected by
+the greedy assignment to the input terms assigned to it.  Unselected
+candidates are omitted.  When \code{min_group_size = 1}, selected
+singleton groups are included even though their mapping is unchanged.}
 \item{\code{rolled_terms}}{Character vector of unique rolled-up CL IDs.}
 }
 If \code{return_mapping = FALSE}, a named character vector mapping each
 original ID to its rolled-up ID.
 }
 \description{
-Aggregates a set of CL terms by replacing groups of related terms with their
-most specific shared ancestor, subject to a minimum group-size constraint.
+Aggregates a set of CL terms by replacing disjoint groups of related terms
+with their most specific eligible shared ancestor, subject to a minimum
+group-size constraint.
 }
 \section{Depth convention and specificity}{
 
@@ -61,7 +67,20 @@ terms.
 
 The \code{max_ancestor_count} filter removes candidate ancestors whose
 ancestor_count exceeds the threshold, preventing roll-up to overly specific
-intermediate nodes.
+intermediate nodes.  The filter is applied before candidates are ranked, so
+the most specific candidate that satisfies the threshold is selected.  A
+value of 0 permits only root-level candidates.
+}
+
+\section{Grouping algorithm}{
+
+Candidate ancestors are ranked deterministically by decreasing
+ancestor_count, then by increasing number of covered input terms, and
+finally by CL ID.  Candidates are accepted greedily when they still cover at
+least \code{min_group_size} unassigned terms.  Consequently, this function
+prioritises local specificity rather than solving a global optimisation
+problem, and applying it repeatedly to its own output may produce additional
+roll-up.
 }
 
 \examples{

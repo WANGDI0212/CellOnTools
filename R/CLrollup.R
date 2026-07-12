@@ -1,8 +1,9 @@
-#' Roll Up Cell Ontology Terms to Optimal Resolution
+#' Greedily Roll Up Cell Ontology Terms to a Coarser Resolution
 #'
 #' @description
-#' Aggregates a set of CL terms by replacing groups of related terms with their
-#' most specific shared ancestor, subject to a minimum group-size constraint.
+#' Aggregates a set of CL terms by replacing disjoint groups of related terms
+#' with their most specific eligible shared ancestor, subject to a minimum
+#' group-size constraint.
 #'
 #' @section Depth convention and specificity:
 #' Throughout this package, **depth is synonymous with ancestor_count**:
@@ -16,19 +17,33 @@
 #'
 #' The \code{max_ancestor_count} filter removes candidate ancestors whose
 #' ancestor_count exceeds the threshold, preventing roll-up to overly specific
-#' intermediate nodes.
+#' intermediate nodes.  The filter is applied before candidates are ranked, so
+#' the most specific candidate that satisfies the threshold is selected.  A
+#' value of 0 permits only root-level candidates.
 #'
-#' @param ids Character vector of CL IDs to aggregate.  Duplicates are silently
-#'   removed (set semantics).
+#' @section Grouping algorithm:
+#' Candidate ancestors are ranked deterministically by decreasing
+#' ancestor_count, then by increasing number of covered input terms, and
+#' finally by CL ID.  Candidates are accepted greedily when they still cover at
+#' least \code{min_group_size} unassigned terms.  Consequently, this function
+#' prioritises local specificity rather than solving a global optimisation
+#' problem, and applying it repeatedly to its own output may produce additional
+#' roll-up.
+#'
+#' @param ids Character vector of CL IDs to aggregate.  \code{NA} and empty
+#'   strings are removed, and duplicates are silently removed (set semantics).
 #' @param clData An \code{ontology_index} object returned by \code{CLload()}.
-#' @param min_group_size Minimum number of input terms that must share an
-#'   ancestor for that ancestor to be used as a roll-up target (default: \code{2}).
-#' @param max_ancestor_count Upper bound on the ancestor_count of candidate
-#'   ancestors (default: \code{NULL}, no limit).  Ancestors with
+#' @param min_group_size Finite positive integer giving the minimum number of
+#'   distinct input terms that must share an ancestor for that ancestor to be
+#'   used as a roll-up target (default: \code{2}).
+#' @param max_ancestor_count \code{NULL} or a finite non-negative integer giving
+#'   the upper bound on the ancestor_count of candidate ancestors (default:
+#'   \code{NULL}, no limit).  Ancestors with
 #'   \code{ancestor_count > max_ancestor_count} are excluded.
-#' @param return_mapping Logical; if \code{TRUE} (default), return a detailed
-#'   list; if \code{FALSE}, return a named character vector.
-#' @param verbose Logical; if \code{TRUE} (default), print progress messages.
+#' @param return_mapping A non-missing logical scalar; if \code{TRUE} (default),
+#'   return a detailed list; if \code{FALSE}, return a named character vector.
+#' @param verbose A non-missing logical scalar; if \code{TRUE} (default), print
+#'   progress messages.
 #'
 #' @return
 #' If \code{return_mapping = TRUE}, a list with:
@@ -36,8 +51,10 @@
 #'   \item{\code{mapping}}{Data frame with columns \code{original_id},
 #'     \code{original_label}, \code{rolled_id}, \code{rolled_label},
 #'     \code{was_rolled}.}
-#'   \item{\code{groups}}{Named list mapping each chosen ancestor to the input
-#'     terms it covers.}
+#'   \item{\code{groups}}{Named list mapping each ancestor actually selected by
+#'     the greedy assignment to the input terms assigned to it.  Unselected
+#'     candidates are omitted.  When \code{min_group_size = 1}, selected
+#'     singleton groups are included even though their mapping is unchanged.}
 #'   \item{\code{rolled_terms}}{Character vector of unique rolled-up CL IDs.}
 #' }
 #' If \code{return_mapping = FALSE}, a named character vector mapping each
@@ -84,27 +101,76 @@ CLrollup <- function(ids,
          "  BiocManager::install('ontologyIndex')", call. = FALSE)
   }
 
-  ids <- .validate_ids(ids, clData = clData, unique_only = TRUE,
-                       allow_unknown = FALSE, warn_invalid = TRUE)
+  # Clean and deduplicate first, then enforce format and ontology membership
+  # strictly.  The shared validator is intentionally permissive for several
+  # query helpers, whereas roll-up cannot produce a meaningful mapping for a
+  # malformed or unknown ID.
+  ids <- .validate_ids(ids, clData = NULL, unique_only = TRUE,
+                       allow_unknown = TRUE, warn_invalid = FALSE)
 
-  if (!is.numeric(min_group_size) || length(min_group_size) != 1L ||
-      is.na(min_group_size) || min_group_size < 1) {
-    stop("`min_group_size` must be a positive integer.", call. = FALSE)
+  bad_format <- unique(ids[!grepl("^CL:\\d+$", ids)])
+  if (length(bad_format) > 0L) {
+    stop(
+      "Invalid CL ID format: ",
+      paste(utils::head(bad_format, 3L), collapse = ", "),
+      if (length(bad_format) > 3L) {
+        paste0(" (and ", length(bad_format) - 3L, " more)")
+      } else "",
+      call. = FALSE
+    )
   }
-  min_group_size <- as.integer(min_group_size)
+
+  unknown <- unique(ids[!ids %in% clData$id])
+  if (length(unknown) > 0L) {
+    stop(
+      "Unknown CL IDs: ",
+      paste(utils::head(unknown, 3L), collapse = ", "),
+      if (length(unknown) > 3L) {
+        paste0(" (and ", length(unknown) - 3L, " more)")
+      } else "",
+      call. = FALSE
+    )
+  }
+
+  validate_integer_scalar <- function(x, name, minimum, null_ok = FALSE) {
+    if (null_ok && is.null(x)) return(NULL)
+
+    valid <- is.numeric(x) && length(x) == 1L && !is.na(x) &&
+      is.finite(x) && x == floor(x) && x >= minimum &&
+      x <= .Machine$integer.max
+
+    if (!valid) {
+      requirement <- if (minimum == 0L) {
+        "NULL or a finite non-negative integer"
+      } else {
+        "a finite positive integer"
+      }
+      stop("`", name, "` must be ", requirement, ".", call. = FALSE)
+    }
+
+    as.integer(x)
+  }
+
+  validate_logical_scalar <- function(x, name) {
+    if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+      stop("`", name, "` must be TRUE or FALSE.", call. = FALSE)
+    }
+    x
+  }
+
+  min_group_size <- validate_integer_scalar(
+    min_group_size, "min_group_size", minimum = 1L
+  )
+  max_ancestor_count <- validate_integer_scalar(
+    max_ancestor_count, "max_ancestor_count", minimum = 0L, null_ok = TRUE
+  )
+  return_mapping <- validate_logical_scalar(return_mapping, "return_mapping")
+  verbose <- validate_logical_scalar(verbose, "verbose")
 
   if (min_group_size > length(ids)) {
     warning("`min_group_size` (", min_group_size,
             ") is larger than the number of input IDs (", length(ids),
             "). No roll-up will occur.", call. = FALSE)
-  }
-
-  if (!is.null(max_ancestor_count)) {
-    if (!is.numeric(max_ancestor_count) || length(max_ancestor_count) != 1L ||
-        is.na(max_ancestor_count) || max_ancestor_count < 1) {
-      stop("`max_ancestor_count` must be NULL or a positive integer.", call. = FALSE)
-    }
-    max_ancestor_count <- as.integer(max_ancestor_count)
   }
 
   if (verbose) {
@@ -128,6 +194,20 @@ CLrollup <- function(ids,
   # ---- Filter by minimum group size ----
   ancestor_to_terms <- ancestor_to_terms[lengths(ancestor_to_terms) >= min_group_size]
 
+  # ---- Apply max_ancestor_count filter ----
+  # This must happen before redundant-parent removal.  Otherwise an ineligible
+  # specific child can remove an eligible general parent and then itself be
+  # discarded by the threshold, leaving no candidate for the group.
+  if (!is.null(max_ancestor_count) && length(ancestor_to_terms) > 0L) {
+    anc_counts <- .get_ancestor_count_vec(names(ancestor_to_terms), clData)
+    before     <- length(ancestor_to_terms)
+    ancestor_to_terms <- ancestor_to_terms[anc_counts <= max_ancestor_count]
+    if (verbose && length(ancestor_to_terms) < before) {
+      message("  Filtered out ", before - length(ancestor_to_terms),
+              " ancestor(s) exceeding max_ancestor_count")
+    }
+  }
+
   # ---- Remove redundant (more general) ancestors ----
   # When a parent candidate covers exactly the same set of input terms as a
   # child candidate, the parent is redundant - the child already captures the
@@ -150,17 +230,6 @@ CLrollup <- function(ids,
     ancestor_to_terms <- ancestor_to_terms[keep]
   }
 
-  # ---- Apply max_ancestor_count filter ----
-  if (!is.null(max_ancestor_count) && length(ancestor_to_terms) > 0L) {
-    anc_counts <- .get_ancestor_count_vec(names(ancestor_to_terms), clData)
-    before     <- length(ancestor_to_terms)
-    ancestor_to_terms <- ancestor_to_terms[anc_counts <= max_ancestor_count]
-    if (verbose && length(ancestor_to_terms) < before) {
-      message("  Filtered out ", before - length(ancestor_to_terms),
-              " ancestor(s) exceeding max_ancestor_count")
-    }
-  }
-
   # ---- Sort candidates: prefer most specific (largest ancestor_count),
   #      break ties by fewest covered terms, then by ID for stability ----
   if (length(ancestor_to_terms) > 0L) {
@@ -176,12 +245,14 @@ CLrollup <- function(ids,
   # ---- Greedy assignment: most specific ancestor wins ----
   term_mapping   <- stats::setNames(ids, ids)   # identity mapping
   already_mapped <- character(0)
+  selected_groups <- list()
 
   for (anc in names(ancestor_to_terms)) {
     unmapped <- setdiff(ancestor_to_terms[[anc]], already_mapped)
     if (length(unmapped) >= min_group_size) {
       term_mapping[unmapped] <- anc
       already_mapped <- c(already_mapped, unmapped)
+      selected_groups[[anc]] <- unmapped
     }
   }
 
@@ -208,7 +279,7 @@ CLrollup <- function(ids,
 
     return(list(
       mapping      = mapping_df,
-      groups       = ancestor_to_terms,
+      groups       = selected_groups,
       rolled_terms = unique(unname(term_mapping))
     ))
   }

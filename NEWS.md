@@ -22,6 +22,17 @@ Initial release.
   `CLcompareCluster()` test gene sets against bundled healthy human and mouse
   CellMarkerAccordion annotations via clusterProfiler.
 
+## Fixes
+
+* `CLrollup()` now applies `max_ancestor_count` before pruning redundant
+  ancestors, so an ineligible specific term cannot remove the best eligible
+  broader roll-up target. A value of 0 is now accepted for root-only roll-up.
+* `CLrollup()$groups` now contains only ancestors actually selected by the
+  greedy assignment and the terms assigned to each, rather than all remaining
+  overlapping candidates.
+* `CLrollup()` now rejects malformed IDs, non-finite or fractional count
+  parameters, and missing or non-logical control flags with explicit errors.
+
 ## Notes
 
 * Heavy and Bioconductor dependencies are declared under `Suggests`; the
