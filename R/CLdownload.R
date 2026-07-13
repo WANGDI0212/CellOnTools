@@ -2,14 +2,17 @@
 #'
 #' @description
 #' Downloads the Cell Ontology OBO file from OBO Foundry (or a custom URL) and
-#' performs a lightweight header validation to confirm the file is a valid OBO
-#' document. For the default Cell Ontology URL, the function retries through a
-#' raw GitHub mirror and, on Windows, an external curl fallback to work around
-#' common SSL/revocation issues.
+#' validates the downloaded content before replacing the destination file. The
+#' default is the fixed \code{2026-06-08} release. Its OBO version header and MD5
+#' checksum are verified, and all fallback URLs point to the same tagged
+#' release rather than to a moving latest/master branch.
 #'
 #' @param dest_file Destination file path (default: \code{"cl.obo"} in the
 #'   current working directory).
-#' @param url URL to download from (default: latest release from OBO Foundry).
+#' @param url URL to download from (default: the versioned OBO Foundry URL for
+#'   Cell Ontology release \code{2026-06-08}). Custom URLs are structurally
+#'   validated as Cell Ontology OBO files but are not required to match the
+#'   package's pinned release.
 #' @param overwrite Logical; if \code{FALSE} (default), stop if the destination
 #'   file already exists.
 #'
@@ -25,14 +28,14 @@
 #' # Download to a specific location
 #' CLdownload(dest_file = "data/cl.obo")
 #'
-#' # Download a specific versioned release
-#' CLdownload(url = "https://purl.obolibrary.org/obo/cl/releases/2023-08-24/cl.obo")
+#' # Download a different versioned release explicitly
+#' CLdownload(url = "https://purl.obolibrary.org/obo/cl/releases/2025-12-16/cl.obo")
 #'
 #' # Load the downloaded file
 #' clData <- CLload(local_obo = "cl.obo", prefer_local = TRUE)
 #' }
 CLdownload <- function(dest_file = "cl.obo",
-                       url       = "https://purl.obolibrary.org/obo/cl.obo",
+                       url       = "https://purl.obolibrary.org/obo/cl/releases/2026-06-08/cl.obo",
                        overwrite = FALSE) {
 
   # ---- Validate arguments ----
@@ -72,12 +75,14 @@ CLdownload <- function(dest_file = "cl.obo",
     on.exit(options(timeout = old_timeout), add = TRUE)
   }
 
-  default_url <- "https://purl.obolibrary.org/obo/cl.obo"
-  release_url <- "https://github.com/obophenotype/cell-ontology/releases/latest/download/cl.obo"
-  raw_url <- "https://raw.githubusercontent.com/obophenotype/cell-ontology/master/cl.obo"
   download_urls <- url
-  if (identical(url, default_url) || identical(url, release_url)) {
-    download_urls <- unique(c(download_urls, raw_url))
+  expected_release <- NULL
+  expected_md5 <- NULL
+  url_release <- .cl_release_from_url(url)
+  if (!is.na(url_release)) {
+    download_urls <- unique(c(url, .cl_release_urls(url_release)))
+    expected_release <- url_release
+    expected_md5 <- .cl_release_md5(url_release)
   }
 
   method_candidates <- getOption("download.file.method", "auto")
@@ -121,7 +126,7 @@ CLdownload <- function(dest_file = "cl.obo",
       }
 
       status <- tryCatch(
-        do.call(utils::download.file, args),
+        .download_obo_file(args),
         error = function(e) e
       )
 
@@ -145,6 +150,23 @@ CLdownload <- function(dest_file = "cl.obo",
         next
       }
 
+      validation_error <- tryCatch(
+        {
+          .validate_cl_obo_file(
+            tmp_file,
+            expected_release = expected_release,
+            expected_md5 = expected_md5
+          )
+          NULL
+        },
+        error = function(e) conditionMessage(e)
+      )
+      if (!is.null(validation_error)) {
+        errors <- c(errors, paste0(attempt_url, " [", method,
+                                   "]: ", validation_error))
+        next
+      }
+
       downloaded_url <- attempt_url
       downloaded_method <- method
       break
@@ -155,28 +177,16 @@ CLdownload <- function(dest_file = "cl.obo",
 
   if (is.na(downloaded_url)) {
     stop("Download failed after trying available methods.\n",
-         paste0("  - ", errors, collapse = "\n"),
+         paste0("  - ", unique(errors), collapse = "\n"),
          "\nTip: if this is an SSL issue on Windows, try downloading the file ",
          "manually with PowerShell or curl and then use CLload(local_obo = ...).",
          call. = FALSE)
   }
 
-  # ---- Verify file ----
+  # The temporary file has passed structural OBO validation. Only now may it
+  # replace the destination, so an invalid response cannot destroy an existing
+  # file even when overwrite = TRUE.
   file_size <- file.size(tmp_file)
-  if (file_size == 0L) {
-    stop("Downloaded file is empty: ", tmp_file, call. = FALSE)
-  }
-
-  # ---- Lightweight OBO header validation ----
-  header <- tryCatch(readLines(tmp_file, n = 30L, warn = FALSE), error = function(e) NULL)
-  if (!is.null(header)) {
-    has_format  <- any(grepl("^format-version:", header))
-    has_term    <- any(grepl("^\\[Term\\]$", header))
-    if (!has_format && !has_term) {
-      warning("Downloaded file does not appear to be a valid OBO document. ",
-              "Check the URL and try again.", call. = FALSE)
-    }
-  }
 
   copied <- file.copy(tmp_file, dest_file, overwrite = TRUE)
   if (!isTRUE(copied)) {
@@ -191,4 +201,115 @@ CLdownload <- function(dest_file = "cl.obo",
   message("  Location: ", normalizePath(dest_file))
 
   invisible(normalizePath(dest_file))
+}
+
+.validate_cl_obo_file <- function(path,
+                                  expected_release = NULL,
+                                  expected_md5 = NULL) {
+  if (!file.exists(path) || is.na(file.size(path)) || file.size(path) == 0L) {
+    stop("Downloaded file is missing or empty.", call. = FALSE)
+  }
+
+  con <- file(path, open = "rt", encoding = "UTF-8")
+  on.exit(close(con), add = TRUE)
+
+  has_format <- FALSE
+  has_cl_ontology <- FALSE
+  has_term <- FALSE
+  has_cl_term <- FALSE
+  looks_like_html <- FALSE
+  in_term_stanza <- FALSE
+  version_lines <- character()
+
+  repeat {
+    lines <- tryCatch(
+      suppressWarnings(readLines(con, n = 1000L, warn = FALSE)),
+      error = function(e) {
+        stop("Downloaded file could not be read as text: ",
+             conditionMessage(e), call. = FALSE)
+      }
+    )
+    if (length(lines) == 0L) break
+
+    lines <- trimws(lines)
+    lines[1L] <- sub("^\ufeff", "", lines[1L])
+
+    looks_like_html <- looks_like_html || any(grepl(
+      "^(<!doctype\\s+html|<html(?:\\s|>))",
+      lines,
+      ignore.case = TRUE,
+      perl = TRUE
+    ))
+    has_format <- has_format || any(grepl(
+      "^format-version:\\s*\\S+", lines, perl = TRUE
+    ))
+    has_cl_ontology <- has_cl_ontology || any(grepl(
+      "^ontology:\\s*cl\\s*$", lines, ignore.case = TRUE, perl = TRUE
+    ))
+    version_lines <- c(version_lines, grep("^data-version:", lines, value = TRUE))
+
+    for (line in lines) {
+      if (identical(line, "[Term]")) {
+        has_term <- TRUE
+        in_term_stanza <- TRUE
+        next
+      }
+      if (grepl("^\\[[^]]+\\]$", line)) {
+        in_term_stanza <- FALSE
+        next
+      }
+      if (in_term_stanza && grepl("^id:\\s*CL:\\d+\\s*$", line, perl = TRUE)) {
+        has_cl_term <- TRUE
+      }
+    }
+
+  }
+
+  problems <- character()
+  if (looks_like_html) problems <- c(problems, "response appears to be HTML")
+  if (!has_format) problems <- c(problems, "missing format-version header")
+  if (!has_cl_ontology) problems <- c(problems, "missing ontology: cl header")
+  if (!has_term) problems <- c(problems, "missing [Term] stanza")
+  if (!has_cl_term) problems <- c(problems, "missing CL term ID")
+
+  if (!is.null(expected_release)) {
+    actual_release <- .cl_release_from_header(version_lines)
+    expected_release <- .normalise_cl_release(expected_release)
+    if (is.na(actual_release)) {
+      problems <- c(problems, "missing or unrecognised data-version release")
+    } else if (!identical(actual_release, expected_release)) {
+      problems <- c(
+        problems,
+        paste0(
+          "release mismatch (expected ", expected_release,
+          ", found ", actual_release, ")"
+        )
+      )
+    }
+  }
+
+  if (!is.null(expected_md5) && !is.na(expected_md5) && nzchar(expected_md5)) {
+    actual_md5 <- tolower(unname(tools::md5sum(path)))
+    if (is.na(actual_md5) || !identical(actual_md5, tolower(expected_md5))) {
+      problems <- c(
+        problems,
+        paste0(
+          "checksum mismatch (expected ", tolower(expected_md5),
+          ", found ", actual_md5, ")"
+        )
+      )
+    }
+  }
+
+  if (length(problems) == 0L) return(invisible(TRUE))
+
+  stop(
+    "Downloaded content is not a valid Cell Ontology OBO document (",
+    paste(problems, collapse = "; "), ").",
+    call. = FALSE
+  )
+}
+
+.download_obo_file <- function(args) {
+  do.call(utils::download.file, args)
 }

@@ -5,50 +5,63 @@
 \title{Load Cell Ontology Data}
 \usage{
 CLload(
-  yearAdded = "2023",
+  yearAdded = NULL,
   local_obo = NULL,
   prefer_local = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  release = "2026-06-08"
 )
 }
 \arguments{
-\item{yearAdded}{Year of the Cell Ontology release to load from AnnotationHub
-(default: \code{"2023"}).  Pass \code{NULL} to automatically select the
-most recent available year.  Ignored when \code{prefer_local = TRUE}.}
+\item{yearAdded}{Year used to select a Cell Ontology entry from
+AnnotationHub. Omit this argument to use the package's fixed release.
+Supply a four-digit year (for example, \code{"2023"}) for a specific
+AnnotationHub entry, or explicitly pass \code{NULL} to select the most
+recent Cell Ontology entry available in AnnotationHub.}
 
 \item{local_obo}{Path to a local \code{.obo} file (default: \code{NULL}).
-Used as a fallback when AnnotationHub fails, or as the primary source when
-\code{prefer_local = TRUE}.  Recommended for releases not yet indexed in
-AnnotationHub - download with \code{\link{CLdownload}}.}
+Used as a fallback when the selected network source fails, or as the
+primary source when \code{prefer_local = TRUE}.}
 
-\item{prefer_local}{Logical; if \code{TRUE}, skip AnnotationHub and load
-directly from \code{local_obo} (default: \code{FALSE}).}
+\item{prefer_local}{Logical; if \code{TRUE}, load directly from
+\code{local_obo} and do not contact a network source (default:
+\code{FALSE}).}
 
 \item{verbose}{Logical; if \code{TRUE} (default), print loading messages.}
+
+\item{release}{Versioned Cell Ontology release date used when
+\code{yearAdded} is omitted (default: \code{"2026-06-08"}). The release
+is cached under \code{tools::R_user_dir("CellOnTools", "cache")}; set
+option \code{CellOnTools.cache_dir} to use a different cache directory.}
 }
 \value{
 An \code{ontology_index} object containing the Cell Ontology, with
-at minimum the fields \code{id}, \code{name}, \code{parents}, and
-\code{ancestors}.
+at minimum the fields \code{id}, \code{name}, \code{parents},
+\code{children}, and \code{ancestors}. Attributes
+\code{ontology_release} and \code{ontology_source} record the actual
+loaded release and source.
 }
 \description{
-Loads the Cell Ontology as an \code{ontology_index} object, either from
-Bioconductor's AnnotationHub or from a local OBO file downloaded with
-\code{\link{CLdownload}}.
+Loads the Cell Ontology as an \code{ontology_index} object. By default,
+\code{CLload()} downloads (once) and caches the fixed \code{2026-06-08}
+release. Explicit \code{yearAdded} calls retain the legacy AnnotationHub
+route, and local OBO files can be used as either a fallback or the primary
+source.
 }
 \examples{
 \dontrun{
-# Default: load 2023 release from AnnotationHub
+# Default: fixed and checksum-verified 2026-06-08 release
 clData <- CLload()
 
-# Auto-detect the most recent available year
-clData <- CLload(yearAdded = NULL)
+# Legacy AnnotationHub routes remain available when requested explicitly
+clData_2023 <- CLload(yearAdded = "2023")
+clData_ah_latest <- CLload(yearAdded = NULL)
 
-# Load a specific year
-clData <- CLload(yearAdded = "2022")
-
-# Load from a local OBO file (recommended for newest releases)
+# Load a local OBO file without contacting a network source
 CLdownload(dest_file = "cl.obo")
-clData <- CLload(local_obo = "cl.obo", prefer_local = TRUE)
+clData_local <- CLload(
+  local_obo = "cl.obo",
+  prefer_local = TRUE
+)
 }
 }

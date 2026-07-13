@@ -5,21 +5,24 @@
 #' with their most specific eligible shared ancestor, subject to a minimum
 #' group-size constraint.
 #'
-#' @section Depth convention and specificity:
-#' Throughout this package, **depth is synonymous with ancestor_count**:
+#' @section Ancestor-count convention and specificity:
+#' Throughout this package, \code{ancestor_count} counts unique proper
+#' ancestors in the CL namespace only:
 #'
-#' \deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+#' \deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 #'
-#' A term with a \emph{larger} ancestor_count is more specific (more granular).
+#' Among ancestor-descendant-comparable terms, a term with a \emph{larger}
+#' ancestor_count is more specific (more granular).
 #' Roll-up prefers the most specific valid ancestor, i.e. the candidate with the
 #' largest ancestor_count that still covers at least \code{min_group_size} input
 #' terms.
 #'
-#' The \code{max_ancestor_count} filter removes candidate ancestors whose
-#' ancestor_count exceeds the threshold, preventing roll-up to overly specific
-#' intermediate nodes.  The filter is applied before candidates are ranked, so
-#' the most specific candidate that satisfies the threshold is selected.  A
-#' value of 0 permits only root-level candidates.
+#' The \code{max_candidate_ancestor_count} filter removes candidate ancestors
+#' whose ancestor_count exceeds the threshold, preventing roll-up to overly
+#' specific intermediate nodes. The filter is applied before candidates are
+#' ranked, so the most specific candidate that satisfies the threshold is
+#' selected. A value of 0 permits only candidates with no proper CL ancestors;
+#' an ontology can contain more than one such CL-subgraph root candidate.
 #'
 #' @section Grouping algorithm:
 #' Candidate ancestors are ranked deterministically by decreasing
@@ -36,10 +39,11 @@
 #' @param min_group_size Finite positive integer giving the minimum number of
 #'   distinct input terms that must share an ancestor for that ancestor to be
 #'   used as a roll-up target (default: \code{2}).
-#' @param max_ancestor_count \code{NULL} or a finite non-negative integer giving
-#'   the upper bound on the ancestor_count of candidate ancestors (default:
-#'   \code{NULL}, no limit).  Ancestors with
-#'   \code{ancestor_count > max_ancestor_count} are excluded.
+#' @param max_candidate_ancestor_count \code{NULL} or a finite non-negative
+#'   integer giving the upper bound on the CL-only ancestor_count of candidate
+#'   ancestors (default: \code{NULL}, no limit). Candidates with
+#'   \code{ancestor_count > max_candidate_ancestor_count} are excluded. This is
+#'   a specificity limit, not a graph-hop distance.
 #' @param return_mapping A non-missing logical scalar; if \code{TRUE} (default),
 #'   return a detailed list; if \code{FALSE}, return a named character vector.
 #' @param verbose A non-missing logical scalar; if \code{TRUE} (default), print
@@ -80,18 +84,21 @@
 #' result <- CLrollup(ids, clData, min_group_size = 2)
 #' print(result$mapping[, c("original_label", "rolled_label", "was_rolled")])
 #'
-#' # Restrict to ancestors with ancestor_count <= 10
-#' result2 <- CLrollup(ids, clData, min_group_size = 2, max_ancestor_count = 10)
+#' # Restrict to candidates with CL-only ancestor_count <= 10
+#' result2 <- CLrollup(
+#'   ids, clData, min_group_size = 2,
+#'   max_candidate_ancestor_count = 10
+#' )
 #'
 #' # Return only the named mapping vector
 #' CLrollup(ids, clData, return_mapping = FALSE)
 #' }
 CLrollup <- function(ids,
                      clData,
-                     min_group_size     = 2L,
-                     max_ancestor_count = NULL,
-                     return_mapping     = TRUE,
-                     verbose            = TRUE) {
+                     min_group_size = 2L,
+                     max_candidate_ancestor_count = NULL,
+                     return_mapping = TRUE,
+                     verbose = TRUE) {
 
   # ---- Validate inputs ----
   .validate_cldata(clData)
@@ -101,71 +108,26 @@ CLrollup <- function(ids,
          "  BiocManager::install('ontologyIndex')", call. = FALSE)
   }
 
-  # Clean and deduplicate first, then enforce format and ontology membership
-  # strictly.  The shared validator is intentionally permissive for several
-  # query helpers, whereas roll-up cannot produce a meaningful mapping for a
-  # malformed or unknown ID.
-  ids <- .validate_ids(ids, clData = NULL, unique_only = TRUE,
-                       allow_unknown = TRUE, warn_invalid = FALSE)
+  # Roll-up requires every cleaned, deduplicated input to be a known CL ID.
+  ids <- .validate_ids(
+    ids,
+    clData = clData,
+    unique_only = TRUE,
+    allow_unknown = FALSE,
+    warn_invalid = FALSE
+  )
 
-  bad_format <- unique(ids[!grepl("^CL:\\d+$", ids)])
-  if (length(bad_format) > 0L) {
-    stop(
-      "Invalid CL ID format: ",
-      paste(utils::head(bad_format, 3L), collapse = ", "),
-      if (length(bad_format) > 3L) {
-        paste0(" (and ", length(bad_format) - 3L, " more)")
-      } else "",
-      call. = FALSE
-    )
-  }
-
-  unknown <- unique(ids[!ids %in% clData$id])
-  if (length(unknown) > 0L) {
-    stop(
-      "Unknown CL IDs: ",
-      paste(utils::head(unknown, 3L), collapse = ", "),
-      if (length(unknown) > 3L) {
-        paste0(" (and ", length(unknown) - 3L, " more)")
-      } else "",
-      call. = FALSE
-    )
-  }
-
-  validate_integer_scalar <- function(x, name, minimum, null_ok = FALSE) {
-    if (null_ok && is.null(x)) return(NULL)
-
-    valid <- is.numeric(x) && length(x) == 1L && !is.na(x) &&
-      is.finite(x) && x == floor(x) && x >= minimum &&
-      x <= .Machine$integer.max
-
-    if (!valid) {
-      requirement <- if (minimum == 0L) {
-        "NULL or a finite non-negative integer"
-      } else {
-        "a finite positive integer"
-      }
-      stop("`", name, "` must be ", requirement, ".", call. = FALSE)
-    }
-
-    as.integer(x)
-  }
-
-  validate_logical_scalar <- function(x, name) {
-    if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-      stop("`", name, "` must be TRUE or FALSE.", call. = FALSE)
-    }
-    x
-  }
-
-  min_group_size <- validate_integer_scalar(
+  min_group_size <- .validate_integer_scalar(
     min_group_size, "min_group_size", minimum = 1L
   )
-  max_ancestor_count <- validate_integer_scalar(
-    max_ancestor_count, "max_ancestor_count", minimum = 0L, null_ok = TRUE
+  max_candidate_ancestor_count <- .validate_integer_scalar(
+    max_candidate_ancestor_count,
+    "max_candidate_ancestor_count",
+    minimum = 0L,
+    null_ok = TRUE
   )
-  return_mapping <- validate_logical_scalar(return_mapping, "return_mapping")
-  verbose <- validate_logical_scalar(verbose, "verbose")
+  return_mapping <- .validate_logical_scalar(return_mapping, "return_mapping")
+  verbose <- .validate_logical_scalar(verbose, "verbose")
 
   if (min_group_size > length(ids)) {
     warning("`min_group_size` (", min_group_size,
@@ -176,12 +138,22 @@ CLrollup <- function(ids,
   if (verbose) {
     message("Rolling up ", length(ids), " terms...")
     message("  min_group_size:     ", min_group_size)
-    if (!is.null(max_ancestor_count))
-      message("  max_ancestor_count: ", max_ancestor_count)
+    if (!is.null(max_candidate_ancestor_count)) {
+      message(
+        "  max_candidate_ancestor_count: ",
+        max_candidate_ancestor_count
+      )
+    }
   }
 
-  # ---- Build ancestor -> covered-input-terms map ----
-  all_ancestors <- lapply(ids, function(id) ontologyIndex::get_ancestors(clData, id))
+  # ---- Build CL-ancestor -> covered-input-terms map ----
+  # AnnotationHub's cellOnto object also contains imported BFO/CARO nodes.
+  # Restrict candidates to CL so a Cell Ontology roll-up cannot return an ID
+  # from another ontology.
+  cl_ids <- .get_cl_ids(clData)
+  all_ancestors <- lapply(ids, function(id) {
+    intersect(ontologyIndex::get_ancestors(clData, id), cl_ids)
+  })
   names(all_ancestors) <- ids
 
   unique_ancestors <- unique(unlist(all_ancestors, use.names = FALSE))
@@ -194,17 +166,20 @@ CLrollup <- function(ids,
   # ---- Filter by minimum group size ----
   ancestor_to_terms <- ancestor_to_terms[lengths(ancestor_to_terms) >= min_group_size]
 
-  # ---- Apply max_ancestor_count filter ----
+  # ---- Apply max_candidate_ancestor_count filter ----
   # This must happen before redundant-parent removal.  Otherwise an ineligible
   # specific child can remove an eligible general parent and then itself be
   # discarded by the threshold, leaving no candidate for the group.
-  if (!is.null(max_ancestor_count) && length(ancestor_to_terms) > 0L) {
+  if (!is.null(max_candidate_ancestor_count) &&
+      length(ancestor_to_terms) > 0L) {
     anc_counts <- .get_ancestor_count_vec(names(ancestor_to_terms), clData)
     before     <- length(ancestor_to_terms)
-    ancestor_to_terms <- ancestor_to_terms[anc_counts <= max_ancestor_count]
+    ancestor_to_terms <- ancestor_to_terms[
+      anc_counts <= max_candidate_ancestor_count
+    ]
     if (verbose && length(ancestor_to_terms) < before) {
       message("  Filtered out ", before - length(ancestor_to_terms),
-              " ancestor(s) exceeding max_ancestor_count")
+              " ancestor(s) exceeding max_candidate_ancestor_count")
     }
   }
 

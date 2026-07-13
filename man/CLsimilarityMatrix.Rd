@@ -27,7 +27,10 @@ count equals the number of valid elements in \code{ids1}.}
 See \code{\link{CLsimilarity}} for details.}
 
 \item{information_content}{Pre-computed information content vector (default:
-\code{NULL}, auto-computed).}
+\code{NULL}, auto-computed).  If supplied, it must be a named numeric
+vector covering every term in \code{ids1} and \code{ids2}, together with
+all ancestors of those terms.  A complete vector returned by
+\code{ontologySimilarity::descendants_IC()} satisfies this requirement.}
 
 \item{verbose}{Logical; if \code{TRUE} (default), print progress messages.}
 }

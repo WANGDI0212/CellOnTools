@@ -4,6 +4,20 @@
 # All functions are unexported (prefixed with a dot).
 # ============================================================================
 
+.MARKER_SOURCE_FILE <- "TheCellMarkerAccordion_database_v1.0.0.xlsx"
+.MARKER_SOURCE_REPOSITORY <-
+  "https://github.com/TebaldiLab/shiny_cellmarkeraccordion"
+.MARKER_SOURCE_COMMIT <- "a2cc870a40df2cdd8f2c9671605b19e3f29229d7"
+.MARKER_SOURCE_SHA256 <-
+  "53ec885a4e3844c8493d3fb1bb4efde29a8012073b067200d3c9e6b528887857"
+.MARKER_REPOSITORY_LICENSE <- "MIT"
+.MARKER_REPOSITORY_COPYRIGHT <-
+  "Copyright (c) 2022 Laboratory of RNA and Disease Data Science (RDDS)"
+.MARKER_REPOSITORY_LICENSE_URL <- paste0(
+  .MARKER_SOURCE_REPOSITORY,
+  "/blob/", .MARKER_SOURCE_COMMIT, "/LICENSE"
+)
+
 # ----------------------------------------------------------------------------
 # .load_marker_data
 # Load the CellMarkerAccordion data object for the given species and validate
@@ -36,6 +50,67 @@
 
   if (nrow(marker_data) == 0) {
     warning("Marker data for species '", species, "' is empty.", call. = FALSE)
+  }
+
+  release <- .normalise_cl_release(
+    attr(marker_data, "ontology_release", exact = TRUE)
+  )
+  if (is.na(release) || !identical(release, .CL_RELEASE)) {
+    stop(
+      "Marker data for species '", species,
+      "' is not harmonised to Cell Ontology release ", .CL_RELEASE, ".",
+      call. = FALSE
+    )
+  }
+  if (!identical(
+    attr(marker_data, "ontology_url", exact = TRUE),
+    .CL_RELEASE_URL
+  ) || !identical(
+    tolower(attr(marker_data, "ontology_md5", exact = TRUE)),
+    .CL_RELEASE_MD5
+  )) {
+    stop(
+      "Marker data for species '", species,
+      "' has incomplete or inconsistent ontology provenance metadata.",
+      call. = FALSE
+    )
+  }
+
+  expected_source <- list(
+    marker_source_file = .MARKER_SOURCE_FILE,
+    marker_source_repository = .MARKER_SOURCE_REPOSITORY,
+    marker_source_commit = .MARKER_SOURCE_COMMIT,
+    marker_source_sha256 = .MARKER_SOURCE_SHA256,
+    marker_repository_license = .MARKER_REPOSITORY_LICENSE,
+    marker_repository_copyright = .MARKER_REPOSITORY_COPYRIGHT,
+    marker_repository_license_url = .MARKER_REPOSITORY_LICENSE_URL
+  )
+  actual_source <- lapply(
+    names(expected_source),
+    function(name) attr(marker_data, name, exact = TRUE)
+  )
+  names(actual_source) <- names(expected_source)
+  if (!identical(actual_source, expected_source)) {
+    stop(
+      "Marker data for species '", species,
+      "' has incomplete or inconsistent source provenance metadata.",
+      call. = FALSE
+    )
+  }
+
+  invalid_ids <- is.na(marker_data$CL_ID) |
+    !grepl("^CL:\\d+$", marker_data$CL_ID)
+  if (any(invalid_ids)) {
+    stop("Marker data contains invalid Cell Ontology IDs.", call. = FALSE)
+  }
+  obsolete_ids <- intersect(unique(marker_data$CL_ID),
+                            names(.CL_MARKER_REPLACEMENTS))
+  if (length(obsolete_ids) > 0L) {
+    stop(
+      "Marker data still contains obsolete Cell Ontology IDs: ",
+      paste(obsolete_ids, collapse = ", "),
+      call. = FALSE
+    )
   }
 
   marker_data

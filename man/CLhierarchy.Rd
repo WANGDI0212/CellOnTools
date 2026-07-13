@@ -4,7 +4,7 @@
 \alias{CLhierarchy}
 \title{Extract Cell Ontology Hierarchical Structure for Visualization}
 \usage{
-CLhierarchy(ids, clData, include_ancestors = TRUE, max_ancestor_count = 3L)
+CLhierarchy(ids, clData, include_ancestors = TRUE, max_hops = 3L)
 }
 \arguments{
 \item{ids}{Character vector of CL IDs to visualize.  Invalid-format or
@@ -15,11 +15,10 @@ unknown IDs are skipped with a warning.}
 \item{include_ancestors}{Logical; if \code{TRUE} (default), include ancestors
 of the query terms in the graph.}
 
-\item{max_ancestor_count}{Maximum ancestor_count difference allowed between
-the deepest query term and a retained ancestor (default: \code{3}).
-Formally, an ancestor \eqn{a} is retained when:
-\deqn{ancestor\_count(deepest\_query) - ancestor\_count(a) \le max\_ancestor\_count}
-Set to \code{NULL} to include all ancestors.}
+\item{max_hops}{\code{NULL} or a non-negative integer giving the maximum
+number of direct CL parent edges to traverse from each query term
+(default: \code{3}). Set to \code{NULL} to include all reachable CL
+ancestors.}
 }
 \value{
 A list with two data frames:
@@ -35,15 +34,16 @@ Compatible with \pkg{igraph} and \pkg{ggraph}.
 Builds a graph-ready node/edge representation of the Cell Ontology subgraph
 that spans a set of query terms and (optionally) their ancestors.
 }
-\section{Depth convention}{
+\section{Distance and ancestor-count conventions}{
 
-Throughout this package, \strong{depth is synonymous with ancestor_count}:
+Ancestor inclusion is controlled by graph-hop distance. Separately, the
+returned \code{ancestor_count} column counts unique proper ancestors in the
+CL namespace:
 
-\deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+\deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 
-The \code{ancestor_count} column in the returned \code{nodes} data frame
-reflects this definition.  It is \emph{not} the number of edges from the
-root.  See \code{\link{CLdepth}} for a full explanation.
+It is not hop distance. Imported non-CL ontology nodes are excluded from
+this count. See \code{\link{CLdepth}} for details.
 }
 
 \examples{

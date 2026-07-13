@@ -78,24 +78,30 @@ CLsearchLabel <- function(pattern,
     max_results <- as.integer(max_results)
   }
 
+  # CL OBO files can include imported ontology terms.  Restrict both matching
+  # and returned rows to genuine Cell Ontology identifiers.
+  is_cl <- grepl("^CL:\\d+$", clData$id)
+  cl_ids <- unname(clData$id[is_cl])
+  cl_names <- unname(clData$name[is_cl])
+
   # ---- Search for each pattern ----
   all_results <- lapply(pattern, function(pat) {
 
     if (exact_match) {
       matches <- if (ignore_case) {
-        which(tolower(clData$name) == tolower(pat))
+        which(tolower(cl_names) == tolower(pat))
       } else {
-        which(clData$name == pat)
+        which(cl_names == pat)
       }
       search_mode <- "exact"
     } else {
       # Partial match: literal (fixed = TRUE) or regex (fixed = FALSE)
       if (use_regex) {
-        matches <- grep(pat, clData$name, ignore.case = ignore_case)
+        matches <- grep(pat, cl_names, ignore.case = ignore_case)
       } else if (ignore_case) {
-        matches <- grep(tolower(pat), tolower(clData$name), fixed = TRUE)
+        matches <- grep(tolower(pat), tolower(cl_names), fixed = TRUE)
       } else {
-        matches <- grep(pat, clData$name, fixed = TRUE)
+        matches <- grep(pat, cl_names, fixed = TRUE)
       }
       search_mode <- if (use_regex) "regex" else "partial"
     }
@@ -116,8 +122,8 @@ CLsearchLabel <- function(pattern,
 
     data.frame(
       pattern    = pat,
-      id         = clData$id[matches],
-      label      = clData$name[matches],
+      id         = cl_ids[matches],
+      label      = cl_names[matches],
       search_mode = search_mode,
       stringsAsFactors = FALSE
     )

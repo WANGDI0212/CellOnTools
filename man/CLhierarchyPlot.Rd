@@ -8,7 +8,7 @@ CLhierarchyPlot(
   ids,
   clData,
   include_ancestors = TRUE,
-  max_ancestor_count = 3L,
+  max_hops = 3L,
   layout = c("sugiyama", "tree", "fr", "kk"),
   node_size = 3,
   label_size = 3,
@@ -25,8 +25,9 @@ CLhierarchyPlot(
 
 \item{include_ancestors}{Logical; if \code{TRUE} (default), include ancestors.}
 
-\item{max_ancestor_count}{Maximum ancestor_count difference above the deepest
-query term (default: \code{3}).  Passed to \code{\link{CLhierarchy}}.}
+\item{max_hops}{Maximum number of direct CL parent edges above each query
+term (default: \code{3}). Passed to \code{\link{CLhierarchy}}; use
+\code{NULL} to include all reachable CL ancestors.}
 
 \item{layout}{Graph layout algorithm: \code{"sugiyama"} (default, recommended
 for DAGs), \code{"tree"}, \code{"fr"}, or \code{"kk"}.}
@@ -53,10 +54,11 @@ contains no edges (with a warning).
 Visualizes the Cell Ontology subgraph returned by \code{\link{CLhierarchy}}
 using \pkg{ggraph}.  Query terms are highlighted in a distinct colour.
 }
-\section{Depth convention}{
+\section{Distance convention}{
 
-Node colouring and filtering use \strong{ancestor_count} (not root-distance).
-See \code{\link{CLdepth}} for the package-wide definition.
+Ancestor inclusion uses graph-hop distance from each query term. The
+\code{ancestor_count} node attribute remains a separate CL-only specificity
+measure; see \code{\link{CLdepth}}.
 }
 
 \examples{

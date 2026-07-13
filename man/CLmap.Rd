@@ -32,7 +32,8 @@ Depends on \code{returnType} and \code{max_results}:
 \itemize{
 \item \code{"all"}: data frame with columns \code{query_original},
 \code{query_display}, \code{query_actual}, \code{cl_label},
-\code{cl_id}, \code{match_status}, \code{error_message}, and
+\code{cl_id}, \code{match_status}, \code{error_message},
+\code{ontology_release}, and
 (when \code{max_results > 1}) \code{rank}.
 \item \code{"id"} / \code{"label"}: named character vector.
 }
@@ -43,6 +44,8 @@ Input order and duplicates are preserved.
 Maps free-text cell type names to Cell Ontology terms via the OLS
 (Ontology Lookup Service) API.  Identical queries (after normalisation) are
 searched only once; results are mapped back to all occurrences in the input.
+Before searching, the function verifies that OLS is serving the package's
+pinned Cell Ontology release (\code{2026-06-08}) and stops on a mismatch.
 }
 \section{Local reranking}{
 

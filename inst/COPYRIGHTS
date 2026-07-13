@@ -1,0 +1,52 @@
+Third-party data notice
+=======================
+
+The bundled CellMarkerAccordion_HumanHealthy and
+CellMarkerAccordion_MouseHealthy datasets are derived from
+TheCellMarkerAccordion_database_v1.0.0.xlsx in:
+
+  https://github.com/TebaldiLab/shiny_cellmarkeraccordion
+
+Source commit:
+
+  a2cc870a40df2cdd8f2c9671605b19e3f29229d7
+
+Source file SHA-256:
+
+  53ec885a4e3844c8493d3fb1bb4efde29a8012073b067200d3c9e6b528887857
+
+Pinned source file:
+
+  https://github.com/TebaldiLab/shiny_cellmarkeraccordion/blob/a2cc870a40df2cdd8f2c9671605b19e3f29229d7/data/TheCellMarkerAccordion_database_v1.0.0.xlsx
+
+The aggregator repository declares the following MIT license for its own
+material. The workbook also integrates records from separately maintained
+resources, including MSigDB, CELLxGENE, CellMarker2.0, scBrainMap, PanglaoDB,
+commercial antibody vendors, and other databases. Those component resources
+may carry separate copyright, attribution, or redistribution terms; the MIT
+notice below does not supersede them. Complete redistribution clearance for
+the bundled derivative tables is under review.
+
+CellOnTools as a whole is distributed under GPL-3 as stated in DESCRIPTION.
+
+MIT License
+
+Copyright (c) 2022 Laboratory of RNA and Disease Data Science (RDDS)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

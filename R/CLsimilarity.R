@@ -16,8 +16,9 @@
 #'   }
 #' @param information_content Pre-computed information content vector (default:
 #'   \code{NULL}, auto-computed via \code{ontologySimilarity::descendants_IC()}).
-#'   If supplied, must be a named numeric vector covering at least the common
-#'   ancestors of \code{id1} and \code{id2}.
+#'   If supplied, must be a named numeric vector covering \code{id1},
+#'   \code{id2}, and every ancestor of either term.  A complete vector returned
+#'   by \code{ontologySimilarity::descendants_IC()} satisfies this requirement.
 #'
 #' @return A single numeric similarity score.
 #'
@@ -79,23 +80,8 @@ CLsimilarity <- function(id1,
   if (is.null(information_content)) {
     information_content <- ontologySimilarity::descendants_IC(clData)
   } else {
-    if (!is.numeric(information_content) || is.null(names(information_content))) {
-      stop("`information_content` must be a named numeric vector.", call. = FALSE)
-    }
-    # Check coverage of common ancestors (the nodes actually needed for the score)
-    common_anc <- intersect(
-      ontologyIndex::get_ancestors(clData, id1),
-      ontologyIndex::get_ancestors(clData, id2)
-    )
-    missing_ic <- common_anc[!common_anc %in% names(information_content)]
-    if (length(missing_ic) > 0L) {
-      stop(
-        "`information_content` is missing IC for required common ancestor(s): ",
-        paste(head(missing_ic, 3L), collapse = ", "),
-        if (length(missing_ic) > 3L) paste0(" (and ", length(missing_ic) - 3L, " more)") else "",
-        call. = FALSE
-      )
-    }
+    required_terms <- .required_ic_terms(c(id1, id2), clData)
+    .validate_information_content(information_content, required_terms)
   }
 
   # ---- Calculate similarity ----
@@ -108,4 +94,37 @@ CLsimilarity <- function(id1,
   )
 
   as.numeric(sim_mat[1L, 1L])
+}
+
+# Return the unique query terms and all ancestors required by
+# ontologySimilarity::get_term_sim_mat().
+.required_ic_terms <- function(ids, clData) {
+  ancestors <- unlist(
+    lapply(unique(ids), function(id) ontologyIndex::get_ancestors(clData, id)),
+    use.names = FALSE
+  )
+  unique(c(ids, ancestors))
+}
+
+# Validate both the shape and term coverage of a pre-computed IC vector.
+.validate_information_content <- function(information_content, required_terms) {
+  if (!is.numeric(information_content) || is.null(names(information_content))) {
+    stop("`information_content` must be a named numeric vector.", call. = FALSE)
+  }
+
+  missing_ic <- required_terms[!required_terms %in% names(information_content)]
+  if (length(missing_ic) > 0L) {
+    stop(
+      "`information_content` is missing IC for required term(s): ",
+      paste(head(missing_ic, 3L), collapse = ", "),
+      if (length(missing_ic) > 3L) {
+        paste0(" (and ", length(missing_ic) - 3L, " more)")
+      } else {
+        ""
+      },
+      call. = FALSE
+    )
+  }
+
+  invisible(TRUE)
 }

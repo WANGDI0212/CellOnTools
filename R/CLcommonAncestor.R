@@ -1,17 +1,18 @@
 #' Find Common Ancestor(s) of Cell Ontology Terms
 #'
 #' @description
-#' Returns the set of CL terms that are ancestors of every query term.
+#' Returns the set of CL-namespace terms that are ancestors of every query term.
 #' When \code{most_specific = TRUE}, only the common ancestors with the
 #' largest ancestor_count are returned (i.e. the most granular shared nodes).
 #'
-#' @section Depth convention:
-#' Throughout this package, **depth is synonymous with ancestor_count**:
+#' @section Ancestor-count convention:
+#' Specificity is ranked using the number of unique proper ancestors in the CL
+#' namespace:
 #'
-#' \deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+#' \deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 #'
-#' "Most specific" means largest ancestor_count, not deepest in any path sense.
-#' See \code{\link{CLdepth}} for a full explanation.
+#' "Most specific" means largest CL-only ancestor_count, not deepest by graph
+#' hops. See \code{\link{CLdepth}} for details.
 #'
 #' @param ids Character vector of CL IDs.  After removing NA and empty strings,
 #'   duplicates are silently dropped (set semantics).
@@ -64,16 +65,21 @@ CLcommonAncestor <- function(ids,
   ids <- .validate_ids(ids, clData = NULL, unique_only = TRUE,
                        allow_unknown = TRUE, warn_invalid = TRUE)
 
+  most_specific <- .validate_logical_scalar(most_specific, "most_specific")
+
+  # ---- Check for unknown IDs before the single-ID shortcut ----
+  well_formed <- grepl("^CL:\\d+$", ids)
+  if (any(!well_formed)) return(character(0))
+
+  unknown <- ids[well_formed & !ids %in% clData$id]
+  if (length(unknown) > 0L) {
+    .warn_compact("Unknown CL ID(s) - returning character(0)", unknown)
+    return(character(0))
+  }
+
   if (length(ids) == 1L) {
     warning("Only one unique ID provided. Returning the ID itself.", call. = FALSE)
     return(ids)
-  }
-
-  # ---- Check for unknown IDs ----
-  unknown <- ids[!ids %in% clData$id]
-  if (length(unknown) > 0) {
-    .warn_compact("Unknown CL ID(s) - returning character(0)", unknown)
-    return(character(0))
   }
 
   # ---- Find common ancestors ----
@@ -81,6 +87,7 @@ CLcommonAncestor <- function(ids,
   # includes any query term that is an ancestor of all others.
   all_ancestors <- lapply(ids, function(id) ontologyIndex::get_ancestors(clData, id))
   common <- Reduce(intersect, all_ancestors)
+  common <- intersect(common, .get_cl_ids(clData))
 
   if (length(common) == 0L) return(character(0))
 

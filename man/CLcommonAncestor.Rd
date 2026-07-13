@@ -22,7 +22,7 @@ If a single valid ID is provided, that ID itself is returned (with a
 warning).
 }
 \description{
-Returns the set of CL terms that are ancestors of every query term.
+Returns the set of CL-namespace terms that are ancestors of every query term.
 When \code{most_specific = TRUE}, only the common ancestors with the
 largest ancestor_count are returned (i.e. the most granular shared nodes).
 }
@@ -38,14 +38,15 @@ a DAG.
 If you need a single unambiguous result, take the first element of the
 returned vector or apply additional domain-specific filtering.
 }
-\section{Depth convention}{
+\section{Ancestor-count convention}{
 
-Throughout this package, \strong{depth is synonymous with ancestor_count}:
+Specificity is ranked using the number of unique proper ancestors in the CL
+namespace:
 
-\deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+\deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 
-"Most specific" means largest ancestor_count, not deepest in any path sense.
-See \code{\link{CLdepth}} for a full explanation.
+"Most specific" means largest CL-only ancestor_count, not deepest by graph
+hops. See \code{\link{CLdepth}} for details.
 }
 
 \examples{

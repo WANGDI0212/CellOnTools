@@ -28,6 +28,32 @@ test_that("CLsimilarity validates its term arguments", {
   expect_error(CLsimilarity("CL:0000300", "CL:9999999", cl), "Unknown CL ID")
 })
 
+test_that("CLsimilarity validates IC coverage for both ancestry branches", {
+  testthat::skip_if_not_installed("ontologyIndex")
+  testthat::skip_if_not_installed("ontologySimilarity")
+  cl <- test_cl_dag()
+  full_ic <- ontologySimilarity::descendants_IC(cl)
+  id1 <- "CL:0000300"
+  id2 <- "CL:0000400"
+
+  common_ancestors <- intersect(
+    ontologyIndex::get_ancestors(cl, id1),
+    ontologyIndex::get_ancestors(cl, id2)
+  )
+  expect_error(
+    CLsimilarity(id1, id2, cl, information_content = full_ic[common_ancestors]),
+    "missing IC for required term"
+  )
+
+  required_terms <- unique(c(
+    ontologyIndex::get_ancestors(cl, id1),
+    ontologyIndex::get_ancestors(cl, id2)
+  ))
+  expect_no_error(
+    CLsimilarity(id1, id2, cl, information_content = full_ic[required_terms])
+  )
+})
+
 test_that("CLsimilarityMatrix preserves input order and duplicates", {
   testthat::skip_if_not_installed("ontologyIndex")
   testthat::skip_if_not_installed("ontologySimilarity")
@@ -51,4 +77,38 @@ test_that("CLsimilarityMatrix preserves input order and duplicates", {
     clData = cl, information_content = ic, verbose = FALSE
   )
   expect_equal(dim(cross), c(2L, 1L))
+})
+
+test_that("CLsimilarityMatrix validates IC coverage for all ancestors", {
+  testthat::skip_if_not_installed("ontologyIndex")
+  testthat::skip_if_not_installed("ontologySimilarity")
+  cl <- test_cl_dag()
+  full_ic <- ontologySimilarity::descendants_IC(cl)
+  ids1 <- "CL:0000300"
+  ids2 <- "CL:0000400"
+
+  expect_error(
+    CLsimilarityMatrix(
+      ids1,
+      ids2,
+      clData = cl,
+      information_content = full_ic[c(ids1, ids2)],
+      verbose = FALSE
+    ),
+    "missing IC for required term"
+  )
+
+  required_terms <- unique(c(
+    ontologyIndex::get_ancestors(cl, ids1),
+    ontologyIndex::get_ancestors(cl, ids2)
+  ))
+  expect_no_error(
+    CLsimilarityMatrix(
+      ids1,
+      ids2,
+      clData = cl,
+      information_content = full_ic[required_terms],
+      verbose = FALSE
+    )
+  )
 })

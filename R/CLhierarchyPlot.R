@@ -4,15 +4,17 @@
 #' Visualizes the Cell Ontology subgraph returned by \code{\link{CLhierarchy}}
 #' using \pkg{ggraph}.  Query terms are highlighted in a distinct colour.
 #'
-#' @section Depth convention:
-#' Node colouring and filtering use \strong{ancestor_count} (not root-distance).
-#' See \code{\link{CLdepth}} for the package-wide definition.
+#' @section Distance convention:
+#' Ancestor inclusion uses graph-hop distance from each query term. The
+#' \code{ancestor_count} node attribute remains a separate CL-only specificity
+#' measure; see \code{\link{CLdepth}}.
 #'
 #' @param ids Character vector of CL IDs to visualize.
 #' @param clData An \code{ontology_index} object returned by \code{CLload()}.
 #' @param include_ancestors Logical; if \code{TRUE} (default), include ancestors.
-#' @param max_ancestor_count Maximum ancestor_count difference above the deepest
-#'   query term (default: \code{3}).  Passed to \code{\link{CLhierarchy}}.
+#' @param max_hops Maximum number of direct CL parent edges above each query
+#'   term (default: \code{3}). Passed to \code{\link{CLhierarchy}}; use
+#'   \code{NULL} to include all reachable CL ancestors.
 #' @param layout Graph layout algorithm: \code{"sugiyama"} (default, recommended
 #'   for DAGs), \code{"tree"}, \code{"fr"}, or \code{"kk"}.
 #' @param node_size Size of nodes (default: \code{3}).
@@ -43,8 +45,8 @@
 #' }
 CLhierarchyPlot <- function(ids,
                             clData,
-                            include_ancestors  = TRUE,
-                            max_ancestor_count = 3L,
+                            include_ancestors = TRUE,
+                            max_hops = 3L,
                             layout             = c("sugiyama", "tree", "fr", "kk"),
                             node_size          = 3,
                             label_size         = 3,
@@ -65,10 +67,10 @@ CLhierarchyPlot <- function(ids,
 
   # ---- Extract hierarchy ----
   hierarchy <- CLhierarchy(
-    ids                = ids,
-    clData             = clData,
-    include_ancestors  = include_ancestors,
-    max_ancestor_count = max_ancestor_count
+    ids = ids,
+    clData = clData,
+    include_ancestors = include_ancestors,
+    max_hops = max_hops
   )
 
   # ---- Guard: no edges ----
@@ -120,11 +122,11 @@ CLhierarchyPlot <- function(ids,
     ) +
     ggplot2::labs(
       title    = "Cell Ontology Hierarchy",
-      subtitle = if (is.null(max_ancestor_count)) {
+      subtitle = if (is.null(max_hops)) {
         "Showing all ancestors of the query terms"
       } else {
-        paste0("Depth filter: ancestor_count \u2264 ", max_ancestor_count,
-               " above deepest query")
+        paste0("Showing ancestors within ", max_hops,
+               " hop(s) of each query")
       }
     )
 

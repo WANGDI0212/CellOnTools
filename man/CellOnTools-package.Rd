@@ -13,7 +13,8 @@ bundled healthy human and mouse CellMarkerAccordion annotations.
 \details{
 Main functionality includes:
 \itemize{
-\item Loading Cell Ontology data from AnnotationHub or local OBO files.
+\item Loading the fixed 2026-06-08 Cell Ontology release, or an explicitly
+selected AnnotationHub/local OBO source.
 \item Converting between CL identifiers and labels.
 \item Searching and mapping free-text cell type names to CL terms.
 \item Extracting and plotting ontology hierarchy subgraphs.

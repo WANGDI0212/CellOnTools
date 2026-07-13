@@ -8,7 +8,7 @@ CLrollup(
   ids,
   clData,
   min_group_size = 2L,
-  max_ancestor_count = NULL,
+  max_candidate_ancestor_count = NULL,
   return_mapping = TRUE,
   verbose = TRUE
 )
@@ -23,10 +23,11 @@ strings are removed, and duplicates are silently removed (set semantics).}
 distinct input terms that must share an ancestor for that ancestor to be
 used as a roll-up target (default: \code{2}).}
 
-\item{max_ancestor_count}{\code{NULL} or a finite non-negative integer giving
-the upper bound on the ancestor_count of candidate ancestors (default:
-\code{NULL}, no limit).  Ancestors with
-\code{ancestor_count > max_ancestor_count} are excluded.}
+\item{max_candidate_ancestor_count}{\code{NULL} or a finite non-negative
+integer giving the upper bound on the CL-only ancestor_count of candidate
+ancestors (default: \code{NULL}, no limit). Candidates with
+\code{ancestor_count > max_candidate_ancestor_count} are excluded. This is
+a specificity limit, not a graph-hop distance.}
 
 \item{return_mapping}{A non-missing logical scalar; if \code{TRUE} (default),
 return a detailed list; if \code{FALSE}, return a named character vector.}
@@ -54,22 +55,25 @@ Aggregates a set of CL terms by replacing disjoint groups of related terms
 with their most specific eligible shared ancestor, subject to a minimum
 group-size constraint.
 }
-\section{Depth convention and specificity}{
+\section{Ancestor-count convention and specificity}{
 
-Throughout this package, \strong{depth is synonymous with ancestor_count}:
+Throughout this package, \code{ancestor_count} counts unique proper
+ancestors in the CL namespace only:
 
-\deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+\deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 
-A term with a \emph{larger} ancestor_count is more specific (more granular).
+Among ancestor-descendant-comparable terms, a term with a \emph{larger}
+ancestor_count is more specific (more granular).
 Roll-up prefers the most specific valid ancestor, i.e. the candidate with the
 largest ancestor_count that still covers at least \code{min_group_size} input
 terms.
 
-The \code{max_ancestor_count} filter removes candidate ancestors whose
-ancestor_count exceeds the threshold, preventing roll-up to overly specific
-intermediate nodes.  The filter is applied before candidates are ranked, so
-the most specific candidate that satisfies the threshold is selected.  A
-value of 0 permits only root-level candidates.
+The \code{max_candidate_ancestor_count} filter removes candidate ancestors
+whose ancestor_count exceeds the threshold, preventing roll-up to overly
+specific intermediate nodes. The filter is applied before candidates are
+ranked, so the most specific candidate that satisfies the threshold is
+selected. A value of 0 permits only candidates with no proper CL ancestors;
+an ontology can contain more than one such CL-subgraph root candidate.
 }
 
 \section{Grouping algorithm}{
@@ -101,8 +105,11 @@ ids <- c(
 result <- CLrollup(ids, clData, min_group_size = 2)
 print(result$mapping[, c("original_label", "rolled_label", "was_rolled")])
 
-# Restrict to ancestors with ancestor_count <= 10
-result2 <- CLrollup(ids, clData, min_group_size = 2, max_ancestor_count = 10)
+# Restrict to candidates with CL-only ancestor_count <= 10
+result2 <- CLrollup(
+  ids, clData, min_group_size = 2,
+  max_candidate_ancestor_count = 10
+)
 
 # Return only the named mapping vector
 CLrollup(ids, clData, return_mapping = FALSE)

@@ -17,9 +17,15 @@ A data frame with 140,337 rows and 5 variables:
 }
 \source{
 Derived from the CellMarkerAccordion marker-gene resource (healthy
-human collection), filtered to harmonised Cell Ontology terms and bundled
-with CellOnTools.  See the package README for the full citation of the
-CellMarkerAccordion resource.
+human collection) at source commit
+\code{a2cc870a40df2cdd8f2c9671605b19e3f29229d7}, filtered to positive
+markers and harmonised against Cell Ontology release \code{2026-06-08}.
+The aggregator repository declares an MIT license for its own material,
+copyright 2022 Laboratory of RNA and Disease Data Science (RDDS); the
+workbook's component resources may have separate terms. See the package
+\code{COPYRIGHTS} file and README for notices, checksums, citation, and
+pinned source at
+\url{https://github.com/TebaldiLab/shiny_cellmarkeraccordion/blob/a2cc870a40df2cdd8f2c9671605b19e3f29229d7/data/TheCellMarkerAccordion_database_v1.0.0.xlsx}.
 }
 \usage{
 CellMarkerAccordion_HumanHealthy
@@ -31,9 +37,12 @@ source for \code{\link[=CLmarkers]{CLmarkers()}}, \code{\link[=CLenricher]{CLenr
 }
 \details{
 Each row is one (cell type, marker gene) association restricted to the
-healthy-tissue subset of the source resource.  Cell types are harmonised to
-Cell Ontology terms so that the annotations can be combined directly with the
-ontology-based operations in this package.
+healthy-tissue, positive-marker subset of the source resource. Cell types
+are harmonised to active terms in Cell Ontology release \code{2026-06-08};
+six obsolete source IDs were migrated to their unique official
+\code{replaced_by} terms. Source database, tissue, and weighting columns are
+not retained, so downstream enrichment is pooled and unweighted. The data
+frame carries ontology and marker-source provenance attributes.
 }
 \seealso{
 \code{\link[=CLmarkers]{CLmarkers()}}, \code{\link[=CLenricher]{CLenricher()}}, \code{\link[=CLcompareCluster]{CLcompareCluster()}}

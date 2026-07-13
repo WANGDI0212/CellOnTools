@@ -8,7 +8,8 @@
 #' @details
 #' Main functionality includes:
 #'
-#' - Loading Cell Ontology data from AnnotationHub or local OBO files.
+#' - Loading the fixed 2026-06-08 Cell Ontology release, or an explicitly
+#'   selected AnnotationHub/local OBO source.
 #' - Converting between CL identifiers and labels.
 #' - Searching and mapping free-text cell type names to CL terms.
 #' - Extracting and plotting ontology hierarchy subgraphs.

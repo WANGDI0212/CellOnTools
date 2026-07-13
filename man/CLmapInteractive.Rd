@@ -38,13 +38,15 @@ Depends on \code{returnType}:
 \item \code{"all"}: data frame with columns \code{query_original},
 \code{query_display}, \code{query_actual}, \code{cl_label},
 \code{cl_id}, \code{selection_mode}, \code{match_status},
-\code{user_selected}.
+\code{user_selected}, and \code{ontology_release}.
 \item \code{"id"} / \code{"label"}: named character vector.
 }
 }
 \description{
 Presents OLS search results for each query term in an interactive console
 session, allowing the user to select, skip, or search for alternative terms.
+Before searching, the function verifies that OLS is serving the package's
+pinned Cell Ontology release (\code{2026-06-08}) and stops on a mismatch.
 }
 \section{Interactive commands}{
 

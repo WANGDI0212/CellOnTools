@@ -11,7 +11,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include = FALSE}
+```{r setup, include = FALSE, purl = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
@@ -30,7 +30,8 @@ directed acyclic graph (DAG) in which each term is linked to more general
 parent terms. **CellOnTools** provides a consistent, well-validated R interface
 to common CL operations together with marker-gene over-representation analysis:
 
-* load the ontology from Bioconductor's AnnotationHub or a local OBO file;
+* load the fixed Cell Ontology release or an explicitly selected legacy/local
+  release;
 * convert between CL identifiers and labels, and search labels;
 * query ancestors, descendants, depth, and common ancestors;
 * extract and plot hierarchy subgraphs;
@@ -58,32 +59,41 @@ The table below is a useful starting point:
 | Several annotated clusters | `CLsimilarityMatrix()`, `CLcommonAncestor()` | Pairwise similarity and shared biological neighbourhoods |
 | Marker genes per cluster | `CLenricher()`, `CLcompareCluster()` | Marker-based evidence for candidate CL terms |
 
-## A note on "depth"
+## Ancestor count versus graph distance
 
-Throughout the package, **depth is defined as the ancestor count**: the number
-of distinct proper ancestors of a term (i.e. excluding the term itself). The
-root has depth 0, its direct children have depth 1, and more specific terms have
-larger depths. Because CL is a DAG, this is *not* the number of edges to the
-root; it is the cardinality of the (transitive) ancestor set. All depth-aware
-arguments (`max_ancestor_count`, etc.) use this convention.
+`CLdepth()` reports the **CL-only ancestor count**: the number of distinct
+proper `CL:*` ancestors of a term. Imported ontology nodes are excluded. Because
+CL is a DAG, this specificity measure is not the number of graph edges to a
+root.
+
+Neighbourhood queries use a separate and literal distance measure. The
+`max_hops` argument in `CLancestors()`, `CLdescendants()`, `CLhierarchy()`, and
+`CLhierarchyPlot()` limits the number of direct CL parent/child edges. Roll-up
+uses `max_candidate_ancestor_count` as a specificity cap, not as distance.
+CL-only filtering does not automatically remove obsolete CL terms; use the
+loaded object's `obsolete` field when active-term-only analysis is required.
 
 ## Loading the Cell Ontology
 
-In normal use you load the ontology once and reuse the object. `CLload()` first
-tries AnnotationHub and falls back to a local OBO file:
+In normal use you load the ontology once and reuse the object. `CLload()` uses
+the fixed, checksum-verified `2026-06-08` release by default and caches it in
+the user cache directory:
 
-```{r load-network, eval = FALSE}
-# From AnnotationHub (requires the AnnotationHub + S4Vectors packages):
-clData <- CLload(yearAdded = "2023")
+```{r load-network, eval = FALSE, purl = FALSE}
+# Fixed 2026-06-08 release (default):
+clData <- CLload()
 
-# Or download the latest release and load it locally:
+# Or manage the same versioned file explicitly:
 CLdownload(dest_file = "cl.obo")
 clData <- CLload(local_obo = "cl.obo", prefer_local = TRUE)
+
+# Legacy AnnotationHub selection remains explicit:
+clData_2023 <- CLload(yearAdded = "2023")
 ```
 
-For reproducible analyses, the local OBO path is often preferable: it records
-exactly which ontology file was used, avoids AnnotationHub availability changes,
-and makes reruns easier to audit.
+Both the default cache and `CLdownload()` verify the release header and official
+MD5 before parsing. The returned object records `ontology_release` and
+`ontology_source` attributes for audit trails.
 
 To keep this vignette fast and free of network access, the examples below use a
 small, hand-built ontology that mimics the structure of CL:
@@ -153,7 +163,7 @@ In a real annotation table, use `strict = TRUE` when reviewed labels are
 expected to exist in the ontology. This fails early if a label has drifted, was
 misspelled, or belongs to a different ontology release:
 
-```{r strict-real, eval = FALSE}
+```{r strict-real, eval = FALSE, purl = FALSE}
 annotation_dictionary <- data.frame(
   cluster_label = c("B", "NK", "Platelet"),
   reviewed_cl_label = c("B cell", "natural killer cell", "platelet")
@@ -168,34 +178,41 @@ annotation_dictionary$cl_id <- CLlabel2id(
 
 ## Ancestors, descendants and depth
 
-```{r ancestry, eval = has_oi}
-CLdepth(c("CL:0000300", "CL:0000700"), clData)
-CLancestors("CL:0000700", clData)
-CLdescendants("CL:0000200", clData, max_descendant_ancestor_count = 1)
+```{r ancestry, purl = FALSE}
+if (has_oi) {
+  CLdepth(c("CL:0000300", "CL:0000700"), clData)
+  CLancestors("CL:0000700", clData)
+  CLdescendants("CL:0000200", clData, max_hops = 1)
+}
 ```
 
-The NKT cell (`CL:0000700`) has two parents, so its depth (5) reflects the size
-of its ancestor set, not a single path length.
+The NKT cell (`CL:0000700`) has two parents. Its ancestor count (5) reflects the
+size of its CL ancestor set, while `max_hops = 1` always means direct edges.
 
 ## Common ancestors and roll-up
 
 `CLcommonAncestor()` returns shared ancestors; with `most_specific = TRUE` it
 returns the most granular shared node(s):
 
-```{r common, eval = has_oi}
-CLcommonAncestor(c("CL:0000300", "CL:0000400"), clData, most_specific = TRUE)
+```{r common, purl = FALSE}
+if (has_oi) {
+  CLcommonAncestor(c("CL:0000300", "CL:0000400"), clData,
+                   most_specific = TRUE)
+}
 ```
 
 `CLrollup()` collapses a set of terms onto their most specific shared ancestors,
 subject to a minimum group size — useful for harmonising fine-grained cluster
 annotations to a coarser, comparable resolution:
 
-```{r rollup, eval = has_oi}
-rolled <- CLrollup(
-  c("CL:0000300", "CL:0000400", "CL:0000700"),
-  clData, min_group_size = 2, verbose = FALSE
-)
-rolled$mapping[, c("original_label", "rolled_label", "was_rolled")]
+```{r rollup, purl = FALSE}
+if (has_oi) {
+  rolled <- CLrollup(
+    c("CL:0000300", "CL:0000400", "CL:0000700"),
+    clData, min_group_size = 2, verbose = FALSE
+  )
+  rolled$mapping[, c("original_label", "rolled_label", "was_rolled")]
+}
 ```
 
 `CLsuggestResolution()` sweeps the roll-up parameters and recommends the setting
@@ -212,12 +229,14 @@ Resnik and Lin similarities are available when **ontologySimilarity** is
 installed. Pre-computing the information content makes repeated comparisons
 cheaper:
 
-```{r similarity, eval = has_os}
-ic <- ontologySimilarity::descendants_IC(clData)
-CLsimilarity("CL:0000300", "CL:0000400", clData,
-             method = "lin", information_content = ic)
-CLsimilarityMatrix(c("CL:0000300", "CL:0000400", "CL:0000350"),
-                   clData = clData, information_content = ic, verbose = FALSE)
+```{r similarity, purl = FALSE}
+if (has_os) {
+  ic <- ontologySimilarity::descendants_IC(clData)
+  CLsimilarity("CL:0000300", "CL:0000400", clData,
+               method = "lin", information_content = ic)
+  CLsimilarityMatrix(c("CL:0000300", "CL:0000400", "CL:0000350"),
+                     clData = clData, information_content = ic, verbose = FALSE)
+}
 ```
 
 `CLsimilarity()` and `CLsimilarityMatrix()` are helpful for asking whether two
@@ -232,14 +251,16 @@ information-content score for the shared ancestor itself.
 `CLhierarchyPlot()` renders them with **ggraph** (highlighting query terms).
 Both require the relevant graph packages:
 
-```{r plot, eval = FALSE}
+```{r plot, eval = FALSE, purl = FALSE}
 CLhierarchyPlot(c("CL:0000300", "CL:0000400"), clData)
 ```
 
 ## Marker genes and enrichment
 
-The package bundles healthy human and mouse marker tables linking cell types to
-CL identifiers and marker genes:
+The package bundles healthy human and mouse positive-marker tables linking cell
+types to active terms in CL release `2026-06-08`. Obsolete source IDs are
+migrated through their official `replaced_by` values. Source database, tissue,
+and weighting fields are not retained, so enrichment is pooled and unweighted:
 
 ```{r markers}
 human <- CLmarkers("human")
@@ -249,12 +270,16 @@ head(human)
 Given a gene set, `CLenricher()` tests for over-representation of cell-type
 markers via **clusterProfiler**:
 
-```{r enrich, eval = has_cp}
-res <- CLenricher(
-  c("CD3D", "CD3E", "CD8A", "CD8B", "CD4", "IL7R", "CCR7"),
-  geneType = "symbol", species = "human"
-)
-head(as.data.frame(res)[, c("ID", "Description", "p.adjust", "Count")], 5)
+```{r enrich, purl = FALSE}
+if (has_cp) {
+  res <- CLenricher(
+    c("CD3D", "CD3E", "CD8A", "CD8B", "CD4", "IL7R", "CCR7"),
+    geneType = "symbol", species = "human"
+  )
+  if (!is.null(res)) {
+    head(as.data.frame(res)[, c("ID", "Description", "p.adjust", "Count")], 5)
+  }
+}
 ```
 
 The default `universe = NULL` uses all genes present in the bundled marker
@@ -265,15 +290,20 @@ matches the assay.
 `CLcompareCluster()` extends enrichment to several gene sets at once. This is
 the usual shape of a single-cell workflow after marker detection:
 
-```{r comparecluster-small, eval = has_cp}
-cluster_markers <- list(
-  "T-like"    = c("CD3D", "CD3E", "CD8A", "IL7R"),
-  "B-like"    = c("MS4A1", "CD79A", "CD79B", "CD74"),
-  "Mono-like" = c("LYZ", "S100A8", "S100A9", "FCN1")
-)
+```{r comparecluster-small, purl = FALSE}
+if (has_cp) {
+  cluster_markers <- list(
+    "T-like"    = c("CD3D", "CD3E", "CD8A", "IL7R"),
+    "B-like"    = c("MS4A1", "CD79A", "CD79B", "CD74"),
+    "Mono-like" = c("LYZ", "S100A8", "S100A9", "FCN1")
+  )
 
-cc <- CLcompareCluster(cluster_markers, geneType = "symbol", species = "human")
-head(as.data.frame(cc)[, c("Cluster", "ID", "Description", "p.adjust")], 8)
+  cc <- CLcompareCluster(cluster_markers, geneType = "symbol", species = "human")
+  cc_df <- as.data.frame(cc)
+  if (nrow(cc_df)) {
+    head(cc_df[, c("Cluster", "ID", "Description", "p.adjust")], 8)
+  }
+}
 ```
 
 When no term passes the requested cutoffs, `CLenricher()` may return `NULL` and
@@ -293,7 +323,7 @@ Key results from that run:
 |---|---:|
 | Processed pbmc3k cells | 2,638 |
 | Seurat annotation labels resolved to CL | 9 / 9 |
-| CL terms loaded from the local OBO file | 18,460 |
+| Ontology IDs loaded (including 3,534 CL IDs) | 19,154 |
 | Reviewed annotations after roll-up | 9 to 3 groups |
 | Seurat marker rows used for enrichment | 3,456 |
 | `CLcompareCluster()` enrichment rows | 674 |
@@ -314,7 +344,7 @@ the recommended pattern is:
 
 For a fuller single-cell workflow template, see:
 
-```{r pbmc-vignette-link, eval = FALSE}
+```{r pbmc-vignette-link, eval = FALSE, purl = FALSE}
 vignette("pbmc3k-workflow", package = "CellOnTools")
 ```
 
@@ -322,16 +352,17 @@ vignette("pbmc3k-workflow", package = "CellOnTools")
 
 `CLmap()` (batch) and `CLmapInteractive()` (console review) resolve free-text
 cell-type names to CL terms through the EBI Ontology Lookup Service. These
-require network access and the **rols** package:
+require network access and the **rols** package. Mapping proceeds only when OLS
+reports the same `2026-06-08` release; otherwise it stops before searching:
 
-```{r map-network, eval = FALSE}
+```{r map-network, eval = FALSE, purl = FALSE}
 CLmap(c("T cell", "B cell", "classical monocyte"), returnType = "id")
 ```
 
 Because OLS is network-dependent, manuscript and pipeline code should record
 failures rather than allowing one API outage to erase local results:
 
-```{r map-guard, eval = FALSE}
+```{r map-guard, eval = FALSE, purl = FALSE}
 ols_candidates <- tryCatch(
   CLmap(c("naive CD4-positive alpha-beta T cell", "CD16-positive monocyte"),
         max_results = 3, returnType = "all", verbose = FALSE),

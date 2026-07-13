@@ -29,8 +29,9 @@ terms' ICs; typically between 0 and 1.
 
 \item{information_content}{Pre-computed information content vector (default:
 \code{NULL}, auto-computed via \code{ontologySimilarity::descendants_IC()}).
-If supplied, must be a named numeric vector covering at least the common
-ancestors of \code{id1} and \code{id2}.}
+If supplied, must be a named numeric vector covering \code{id1},
+\code{id2}, and every ancestor of either term.  A complete vector returned
+by \code{ontologySimilarity::descendants_IC()} satisfies this requirement.}
 }
 \value{
 A single numeric similarity score.

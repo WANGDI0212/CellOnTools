@@ -103,6 +103,69 @@ test_cl_dag <- function() {
   )
 }
 
+# A CL subgraph with an imported CARO/BFO parent branch. This mirrors the
+# structure that previously allowed CL queries and roll-ups to return non-CL
+# identifiers or inflate ancestor counts.
+test_cl_cross_ontology <- function() {
+  ids <- c(
+    "BFO:0000002", "BFO:0000004", "CARO:0000006",
+    "CL:0000000", "CL:0000084", "CL:0000798",
+    "CL:1000000", "CL:1000001"
+  )
+  name <- stats::setNames(
+    c(
+      "continuant", "independent continuant", "material anatomical entity",
+      "cell", "T cell", "gamma-delta T cell",
+      "external-rooted CL term A", "external-rooted CL term B"
+    ),
+    ids
+  )
+  parents <- list(
+    "BFO:0000002" = character(0),
+    "BFO:0000004" = "BFO:0000002",
+    "CARO:0000006" = "BFO:0000004",
+    "CL:0000000" = character(0),
+    "CL:0000084" = "CL:0000000",
+    "CL:0000798" = c("CL:0000084", "CARO:0000006"),
+    "CL:1000000" = "BFO:0000004",
+    "CL:1000001" = "BFO:0000004"
+  )
+  children <- list(
+    "BFO:0000002" = "BFO:0000004",
+    "BFO:0000004" = c("CARO:0000006", "CL:1000000", "CL:1000001"),
+    "CARO:0000006" = "CL:0000798",
+    "CL:0000000" = "CL:0000084",
+    "CL:0000084" = "CL:0000798",
+    "CL:0000798" = character(0),
+    "CL:1000000" = character(0),
+    "CL:1000001" = character(0)
+  )
+  ancestors <- list(
+    "BFO:0000002" = "BFO:0000002",
+    "BFO:0000004" = c("BFO:0000004", "BFO:0000002"),
+    "CARO:0000006" = c("CARO:0000006", "BFO:0000004", "BFO:0000002"),
+    "CL:0000000" = "CL:0000000",
+    "CL:0000084" = c("CL:0000084", "CL:0000000"),
+    "CL:0000798" = c(
+      "CL:0000798", "CL:0000084", "CL:0000000",
+      "CARO:0000006", "BFO:0000004", "BFO:0000002"
+    ),
+    "CL:1000000" = c("CL:1000000", "BFO:0000004", "BFO:0000002"),
+    "CL:1000001" = c("CL:1000001", "BFO:0000004", "BFO:0000002")
+  )
+
+  structure(
+    list(
+      id = ids,
+      name = name,
+      parents = parents,
+      children = children,
+      ancestors = ancestors
+    ),
+    class = "ontology_index"
+  )
+}
+
 # Capture every warning message raised while evaluating `expr`.
 # Returns a character vector (possibly empty); `expr` is still evaluated.
 capture_warnings <- function(expr) {

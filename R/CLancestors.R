@@ -1,31 +1,26 @@
 #' Get Ancestors of Cell Ontology Terms
 #'
 #' @description
-#' Returns all ancestors of each queried CL term, optionally filtered by how
-#' far above the query term they are (measured in ancestor_count difference).
+#' Returns CL-namespace ancestors of each queried term, optionally limited by
+#' the number of graph edges (hops) above the query.
 #'
-#' @section Depth convention:
-#' Throughout this package, **depth is synonymous with ancestor_count**:
-#'
-#' \deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
-#'
-#' It is \emph{not} the number of edges from the root.  See \code{\link{CLdepth}}
-#' for a full explanation.
+#' @section Distance convention:
+#' Hop distance is the shortest number of direct parent edges from the query
+#' to an ancestor. It is deliberately distinct from the CL-only
+#' \code{ancestor_count} returned by \code{\link{CLdepth}}.
 #'
 #' @param ids Character vector of CL IDs.  NA and empty strings are silently
 #'   dropped.  Duplicates are preserved in the output list.
 #' @param clData An \code{ontology_index} object returned by \code{CLload()}.
 #' @param include_self Logical; if \code{TRUE}, include the query term itself
 #'   in its own ancestor list (default: \code{FALSE}).
-#' @param max_ancestor_count Maximum allowed ancestor_count difference between
-#'   the query term and a returned ancestor (default: \code{NULL}, return all
-#'   ancestors).  Formally, an ancestor \eqn{a} is retained when:
-#'   \deqn{ancestor\_count(query) - ancestor\_count(a) \le max\_ancestor\_count}
-#'   A value of 1 returns only direct parents; larger values return progressively
-#'   more distant ancestors.
+#' @param max_hops \code{NULL} or a non-negative integer giving the maximum
+#'   number of direct parent edges to traverse (default: \code{NULL}, return all
+#'   reachable CL ancestors). A value of 0 returns no ancestors unless
+#'   \code{include_self = TRUE}; a value of 1 returns all direct CL parents.
 #'
 #' @return Named list of character vectors.  Each element corresponds to one
-#'   input ID and contains the CL IDs of its ancestors.  Returns
+#'   input ID and contains only \code{CL:*} IDs of its ancestors. Returns
 #'   \code{character(0)} for unknown IDs.
 #'
 #' @export
@@ -40,16 +35,16 @@
 #' # Include the query term itself
 #' CLancestors("CL:0000084", clData, include_self = TRUE)
 #'
-#' # Only ancestors within 3 ancestor_count steps above the query
-#' CLancestors("CL:0000084", clData, max_ancestor_count = 3)
+#' # Only ancestors within 3 direct-parent hops above the query
+#' CLancestors("CL:0000084", clData, max_hops = 3)
 #'
 #' # Multiple terms
 #' CLancestors(c("CL:0000084", "CL:0000236"), clData)
 #' }
 CLancestors <- function(ids,
                         clData,
-                        include_self      = FALSE,
-                        max_ancestor_count = NULL) {
+                        include_self = FALSE,
+                        max_hops = NULL) {
 
   # ---- Validate inputs ----
   .validate_cldata(clData)
@@ -62,13 +57,10 @@ CLancestors <- function(ids,
   ids <- .validate_ids(ids, clData = NULL, unique_only = FALSE,
                        allow_unknown = TRUE, warn_invalid = TRUE)
 
-  if (!is.null(max_ancestor_count)) {
-    if (!is.numeric(max_ancestor_count) || length(max_ancestor_count) != 1L ||
-        is.na(max_ancestor_count) || max_ancestor_count < 0) {
-      stop("`max_ancestor_count` must be NULL or a non-negative number.", call. = FALSE)
-    }
-    max_ancestor_count <- as.integer(max_ancestor_count)
-  }
+  include_self <- .validate_logical_scalar(include_self, "include_self")
+  max_hops <- .validate_integer_scalar(
+    max_hops, "max_hops", minimum = 0L, null_ok = TRUE
+  )
 
   # ---- Warn once for all unknown IDs ----
   # Exclude bad-format IDs: they were already reported by .validate_ids(), so
@@ -79,23 +71,20 @@ CLancestors <- function(ids,
     .warn_compact("Unknown CL ID(s) - returning empty vector", unknown)
   }
 
-  # ---- Get ancestors for each ID ----
+  # ---- Traverse direct CL parent edges for each ID ----
+  cl_ids <- .get_cl_ids(clData)
   result <- lapply(ids, function(id) {
-    if (!id %in% clData$id) return(character(0))
-
-    anc <- ontologyIndex::get_ancestors(clData, id)
-
-    if (!include_self) anc <- setdiff(anc, id)
-
-    # Apply ancestor_count filter
-    if (!is.null(max_ancestor_count) && length(anc) > 0) {
-      query_count <- .get_ancestor_count_one(id, clData)
-      anc_counts  <- .get_ancestor_count_vec(anc, clData)
-      # Keep ancestors where the difference in ancestor_count is within the limit
-      anc <- anc[query_count - anc_counts <= max_ancestor_count]
+    if (!grepl("^CL:\\d+$", id) || !id %in% clData$id) {
+      return(character(0))
     }
 
-    anc
+    .walk_ontology(
+      start = id,
+      neighbours = clData$parents,
+      max_hops = max_hops,
+      include_self = include_self,
+      allowed_ids = cl_ids
+    )
   })
 
   names(result) <- ids

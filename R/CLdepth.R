@@ -1,25 +1,29 @@
 #' Calculate Ancestor Count (Depth) of Cell Ontology Terms
 #'
 #' @description
-#' Returns the **ancestor_count** for each queried CL term, defined as:
+#' Returns the CL-only **ancestor_count** for each queried CL term, defined as:
 #'
-#' \deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+#' \deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 #'
-#' where the ancestor set is obtained via
-#' \code{ontologyIndex::get_ancestors(clData, id)} (which includes the term
-#' itself), and subtracting 1 removes the term from its own count.
+#' where only identifiers in the \code{CL:*} namespace are retained from
+#' \code{ontologyIndex::get_ancestors(clData, id)}. That function includes the
+#' term itself, so subtracting 1 removes the query from its own count.
 #'
-#' @section Depth convention:
-#' Throughout this package, **depth is synonymous with ancestor_count**.
-#' It is \emph{not} the number of edges from the root, the shortest path, or
-#' the longest path.  In a DAG ontology a term may have multiple paths to the
-#' root; ancestor_count counts unique ancestors, not path length.
+#' @section Ancestor-count convention:
+#' Despite the historical function name, ancestor_count is not graph-hop
+#' depth, shortest-path depth, or longest-path depth. In a DAG a term may have
+#' multiple parent branches; the function counts unique proper CL ancestors.
+#' Imported BFO, CARO, and other non-CL nodes are excluded.
 #'
 #' Practical interpretation:
 #' \itemize{
-#'   \item Root term: ancestor_count = 0.
-#'   \item Direct child of root: ancestor_count = 1.
-#'   \item More specific (granular) terms have larger ancestor_counts.
+#'   \item A CL root term has ancestor_count = 0.
+#'   \item Along an ancestor-descendant relationship, more specific terms have
+#'     larger ancestor_counts. Counts should not be used to rank unrelated
+#'     branches globally.
+#'   \item Ancestor-count differences are not edge distances; use
+#'     \code{max_hops} in \code{\link{CLancestors}} or
+#'     \code{\link{CLdescendants}} for graph neighbourhoods.
 #' }
 #'
 #' @param ids Character vector of CL IDs (e.g. \code{"CL:0000084"}).
@@ -63,8 +67,8 @@ CLdepth <- function(ids, clData) {
   # For IDs not in the ontology, return NA and emit one aggregated warning.
   # Exclude bad-format IDs from the unknown warning: they were already reported
   # by .validate_ids(), so re-flagging them here would double-warn.
-  known       <- ids %in% clData$id
   well_formed <- grepl("^CL:\\d+$", ids)
+  known       <- well_formed & ids %in% clData$id
   unknown     <- unique(ids[well_formed & !known])
 
   if (length(unknown) > 0) {

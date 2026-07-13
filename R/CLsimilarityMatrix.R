@@ -14,7 +14,10 @@
 #' @param method Similarity measure: \code{"resnik"} (default) or \code{"lin"}.
 #'   See \code{\link{CLsimilarity}} for details.
 #' @param information_content Pre-computed information content vector (default:
-#'   \code{NULL}, auto-computed).
+#'   \code{NULL}, auto-computed).  If supplied, it must be a named numeric
+#'   vector covering every term in \code{ids1} and \code{ids2}, together with
+#'   all ancestors of those terms.  A complete vector returned by
+#'   \code{ontologySimilarity::descendants_IC()} satisfies this requirement.
 #' @param verbose Logical; if \code{TRUE} (default), print progress messages.
 #'
 #' @return Numeric matrix with \code{length(ids1)} rows and \code{length(ids2)}
@@ -110,15 +113,8 @@ CLsimilarityMatrix <- function(ids1,
     if (verbose) message("Computing information content...")
     information_content <- ontologySimilarity::descendants_IC(clData)
   } else {
-    if (!is.numeric(information_content) || is.null(names(information_content))) {
-      stop("`information_content` must be a named numeric vector.", call. = FALSE)
-    }
-    all_ids     <- unique(c(ids1, ids2))
-    missing_ic  <- all_ids[!all_ids %in% names(information_content)]
-    if (length(missing_ic) > 0L) {
-      stop("`information_content` is missing IC for: ",
-           paste(head(missing_ic, 3L), collapse = ", "), call. = FALSE)
-    }
+    required_terms <- .required_ic_terms(c(ids1, ids2), clData)
+    .validate_information_content(information_content, required_terms)
   }
 
   # ---- Compute similarity matrix ----

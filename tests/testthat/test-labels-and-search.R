@@ -30,3 +30,26 @@ test_that("CL label search supports literal and exact matching", {
   expect_named(empty, c("pattern", "id", "label", "search_mode"))
   expect_equal(nrow(empty), 0L)
 })
+
+test_that("label conversion and search exclude imported ontology terms", {
+  cl <- test_cl_cross_ontology()
+
+  expect_warning(
+    imported <- CLlabel2id("continuant", cl),
+    "Unknown cell type"
+  )
+  expect_true(is.na(imported))
+
+  expect_warning(
+    hits <- CLsearchLabel("continuant", cl, exact_match = TRUE),
+    "No matches found"
+  )
+  expect_equal(nrow(hits), 0L)
+
+  # An imported term with the same label must not displace the CL term.
+  cl$name["BFO:0000002"] <- "cell"
+  expect_equal(CLlabel2id("cell", cl), "CL:0000000")
+  hit <- CLsearchLabel("cell", cl, exact_match = TRUE, max_results = 1)
+  expect_equal(hit$id, "CL:0000000")
+  expect_true(all(grepl("^CL:", hit$id)))
+})

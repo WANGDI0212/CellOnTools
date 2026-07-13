@@ -51,21 +51,26 @@ CLlabel2id <- function(labels, clData, strict = FALSE, ignore_case = FALSE) {
   labels <- as.character(labels)
 
   # ---- Build lookup ----
-  label2id <- stats::setNames(clData$id, clData$name)
+  # CL OBO files can include imported BFO/CARO/etc. terms.  This function is a
+  # Cell Ontology lookup, so imported labels must never resolve to non-CL IDs.
+  is_cl <- grepl("^CL:\\d+$", clData$id)
+  cl_ids <- unname(clData$id[is_cl])
+  cl_names <- unname(clData$name[is_cl])
+  label2id <- stats::setNames(cl_ids, cl_names)
 
   # ---- Case-insensitive collision check ----
   if (ignore_case) {
-    lower_names <- tolower(clData$name)
+    lower_names <- tolower(cl_names)
     dup_lower   <- duplicated(lower_names) | duplicated(lower_names, fromLast = TRUE)
     if (any(dup_lower)) {
-      colliding <- unique(clData$name[dup_lower])
+      colliding <- unique(cl_names[dup_lower])
       .warn_compact(
         "Case-insensitive collision: multiple ontology labels map to the same lowercase form (first match used)",
         colliding
       )
     }
     # Build case-insensitive map (first occurrence wins)
-    label2id_lower <- stats::setNames(clData$id, lower_names)
+    label2id_lower <- stats::setNames(cl_ids, lower_names)
     label2id_lower <- label2id_lower[!duplicated(names(label2id_lower))]
   }
 

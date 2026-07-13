@@ -3,6 +3,8 @@
 #' @description
 #' Presents OLS search results for each query term in an interactive console
 #' session, allowing the user to select, skip, or search for alternative terms.
+#' Before searching, the function verifies that OLS is serving the package's
+#' pinned Cell Ontology release (\code{2026-06-08}) and stops on a mismatch.
 #'
 #' @section Interactive commands:
 #' \describe{
@@ -37,7 +39,7 @@
 #'     \item \code{"all"}: data frame with columns \code{query_original},
 #'       \code{query_display}, \code{query_actual}, \code{cl_label},
 #'       \code{cl_id}, \code{selection_mode}, \code{match_status},
-#'       \code{user_selected}.
+#'       \code{user_selected}, and \code{ontology_release}.
 #'     \item \code{"id"} / \code{"label"}: named character vector.
 #'   }
 #'
@@ -162,7 +164,8 @@ CLmapInteractive <- function(query,
           stop("OLS result missing required columns.")
         }
 
-        df[grep("^CL:", df$obo_id), c("label", "obo_id"), drop = FALSE]
+        df[grep("^CL:\\d+$", df$obo_id),
+           c("label", "obo_id"), drop = FALSE]
       }, error = function(e) {
         errors <<- c(errors, paste0(term, ": ", conditionMessage(e)))
         NULL
@@ -396,6 +399,8 @@ CLmapInteractive <- function(query,
   n_valid   <- sum(valid_idx)
   if (n_valid == 0L) stop("No valid queries to process.", call. = FALSE)
 
+  .assert_ols_cl_release()
+
   query_norm_all <- rep(NA_character_, n_input)
   query_norm_all[valid_idx] <- .normalize_query(query_original_all[valid_idx])
 
@@ -595,6 +600,7 @@ CLmapInteractive <- function(query,
         query_actual = NA_character_, cl_label = NA_character_,
         cl_id = NA_character_, selection_mode = "invalid_input",
         match_status = "invalid_input", user_selected = FALSE,
+        ontology_release = .CL_RELEASE,
         stringsAsFactors = FALSE
       ))
     }
@@ -609,6 +615,7 @@ CLmapInteractive <- function(query,
       selection_mode = sel$selection_mode,
       match_status   = sel$match_status,
       user_selected  = identical(sel$selection_mode, "manual"),
+      ontology_release = .CL_RELEASE,
       stringsAsFactors = FALSE
     )
   })
@@ -649,7 +656,15 @@ CLmapInteractive <- function(query,
   # Return
   # ========================================================================
 
-  if (returnType == "id")    return(stats::setNames(df$cl_id,    df$query_original))
-  if (returnType == "label") return(stats::setNames(df$cl_label, df$query_original))
+  if (returnType == "id") {
+    out <- stats::setNames(df$cl_id, df$query_original)
+    attr(out, "ontology_release") <- .CL_RELEASE
+    return(out)
+  }
+  if (returnType == "label") {
+    out <- stats::setNames(df$cl_label, df$query_original)
+    attr(out, "ontology_release") <- .CL_RELEASE
+    return(out)
+  }
   df
 }

@@ -4,6 +4,8 @@
 #' Maps free-text cell type names to Cell Ontology terms via the OLS
 #' (Ontology Lookup Service) API.  Identical queries (after normalisation) are
 #' searched only once; results are mapped back to all occurrences in the input.
+#' Before searching, the function verifies that OLS is serving the package's
+#' pinned Cell Ontology release (\code{2026-06-08}) and stops on a mismatch.
 #'
 #' @section Local reranking:
 #' OLS results are locally reranked before returning, using the following
@@ -32,7 +34,8 @@
 #'   \itemize{
 #'     \item \code{"all"}: data frame with columns \code{query_original},
 #'       \code{query_display}, \code{query_actual}, \code{cl_label},
-#'       \code{cl_id}, \code{match_status}, \code{error_message}, and
+#'       \code{cl_id}, \code{match_status}, \code{error_message},
+#'       \code{ontology_release}, and
 #'       (when \code{max_results > 1}) \code{rank}.
 #'     \item \code{"id"} / \code{"label"}: named character vector.
 #'   }
@@ -135,6 +138,7 @@ CLmap <- function(query,
                query_actual = q_actual, cl_label = NA_character_,
                cl_id = NA_character_, match_status = status,
                error_message = error, rank = as.integer(rank),
+               ontology_release = .CL_RELEASE,
                stringsAsFactors = FALSE)
   }
 
@@ -155,7 +159,8 @@ CLmap <- function(query,
           stop("OLS result missing required columns: label, obo_id.")
         }
 
-        df_cl <- df[grep("^CL:", df$obo_id), c("label", "obo_id"), drop = FALSE]
+        df_cl <- df[grep("^CL:\\d+$", df$obo_id),
+                    c("label", "obo_id"), drop = FALSE]
         df_cl
       }, error = function(e) {
         errors <<- c(errors, paste0(term, ": ", conditionMessage(e)))
@@ -196,6 +201,7 @@ CLmap <- function(query,
         cl_label      = df_cl$label,
         cl_id         = df_cl$obo_id,
         rank          = seq_len(nrow(df_cl)),
+        ontology_release = .CL_RELEASE,
         stringsAsFactors = FALSE
       )
     )
@@ -269,6 +275,8 @@ CLmap <- function(query,
     message("\nSearching Cell Ontology via OLS...")
   }
 
+  if (n_unique > 0L) .assert_ols_cl_release()
+
   # ========================================================================
   # Search
   # ========================================================================
@@ -309,6 +317,7 @@ CLmap <- function(query,
                    query_actual = q_actual, cl_label = sr$data$cl_label[j],
                    cl_id = sr$data$cl_id[j], match_status = "matched",
                    error_message = NA_character_, rank = as.integer(sr$data$rank[j]),
+                   ontology_release = .CL_RELEASE,
                    stringsAsFactors = FALSE)
       })))
     }
@@ -360,8 +369,16 @@ CLmap <- function(query,
 
   if (max_results == 1L) {
     df$rank <- NULL
-    if (returnType == "id")    return(stats::setNames(df$cl_id,    df$query_original))
-    if (returnType == "label") return(stats::setNames(df$cl_label, df$query_original))
+    if (returnType == "id") {
+      out <- stats::setNames(df$cl_id, df$query_original)
+      attr(out, "ontology_release") <- .CL_RELEASE
+      return(out)
+    }
+    if (returnType == "label") {
+      out <- stats::setNames(df$cl_label, df$query_original)
+      attr(out, "ontology_release") <- .CL_RELEASE
+      return(out)
+    }
   }
 
   df

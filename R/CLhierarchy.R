@@ -4,25 +4,25 @@
 #' Builds a graph-ready node/edge representation of the Cell Ontology subgraph
 #' that spans a set of query terms and (optionally) their ancestors.
 #'
-#' @section Depth convention:
-#' Throughout this package, **depth is synonymous with ancestor_count**:
+#' @section Distance and ancestor-count conventions:
+#' Ancestor inclusion is controlled by graph-hop distance. Separately, the
+#' returned \code{ancestor_count} column counts unique proper ancestors in the
+#' CL namespace:
 #'
-#' \deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
+#' \deqn{ancestor\_count(id) = |\{CL ancestors of id\}| - 1}
 #'
-#' The \code{ancestor_count} column in the returned \code{nodes} data frame
-#' reflects this definition.  It is \emph{not} the number of edges from the
-#' root.  See \code{\link{CLdepth}} for a full explanation.
+#' It is not hop distance. Imported non-CL ontology nodes are excluded from
+#' this count. See \code{\link{CLdepth}} for details.
 #'
 #' @param ids Character vector of CL IDs to visualize.  Invalid-format or
 #'   unknown IDs are skipped with a warning.
 #' @param clData An \code{ontology_index} object returned by \code{CLload()}.
 #' @param include_ancestors Logical; if \code{TRUE} (default), include ancestors
 #'   of the query terms in the graph.
-#' @param max_ancestor_count Maximum ancestor_count difference allowed between
-#'   the deepest query term and a retained ancestor (default: \code{3}).
-#'   Formally, an ancestor \eqn{a} is retained when:
-#'   \deqn{ancestor\_count(deepest\_query) - ancestor\_count(a) \le max\_ancestor\_count}
-#'   Set to \code{NULL} to include all ancestors.
+#' @param max_hops \code{NULL} or a non-negative integer giving the maximum
+#'   number of direct CL parent edges to traverse from each query term
+#'   (default: \code{3}). Set to \code{NULL} to include all reachable CL
+#'   ancestors.
 #'
 #' @return A list with two data frames:
 #'   \describe{
@@ -59,8 +59,8 @@
 #' }
 CLhierarchy <- function(ids,
                         clData,
-                        include_ancestors  = TRUE,
-                        max_ancestor_count = 3L) {
+                        include_ancestors = TRUE,
+                        max_hops = 3L) {
 
   # ---- Validate inputs ----
   .validate_cldata(clData)
@@ -92,27 +92,18 @@ CLhierarchy <- function(ids,
     stop("No valid, known CL IDs remain after filtering.", call. = FALSE)
   }
 
-  if (!is.null(max_ancestor_count)) {
-    if (!is.numeric(max_ancestor_count) || length(max_ancestor_count) != 1L ||
-        is.na(max_ancestor_count) || max_ancestor_count < 0) {
-      stop("`max_ancestor_count` must be NULL or a non-negative number.", call. = FALSE)
-    }
-    max_ancestor_count <- as.integer(max_ancestor_count)
-  }
+  include_ancestors <- .validate_logical_scalar(
+    include_ancestors, "include_ancestors"
+  )
+  max_hops <- .validate_integer_scalar(
+    max_hops, "max_hops", minimum = 0L, null_ok = TRUE
+  )
 
   # ---- Determine node set ----
   if (include_ancestors) {
     anc_list <- CLancestors(ids, clData, include_self = FALSE,
-                            max_ancestor_count = NULL)
+                            max_hops = max_hops)
     all_anc  <- unique(unlist(anc_list, use.names = FALSE))
-
-    if (!is.null(max_ancestor_count) && length(all_anc) > 0L) {
-      query_counts    <- .get_ancestor_count_vec(ids, clData)
-      max_query_count <- max(query_counts)
-      anc_counts      <- .get_ancestor_count_vec(all_anc, clData)
-      # Keep ancestors within max_ancestor_count steps above the deepest query
-      all_anc <- all_anc[max_query_count - anc_counts <= max_ancestor_count]
-    }
 
     nodes <- unique(c(ids, all_anc))
   } else {

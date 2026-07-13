@@ -105,16 +105,20 @@ if (requireNamespace("clusterProfiler", quietly = TRUE)) {
 }
 ```
 
-Ontology operations use a loaded `ontology_index` object. Load from
-AnnotationHub when available, or download a reproducible local OBO file:
+Ontology operations use a loaded `ontology_index` object. By default,
+`CLload()` downloads once and caches the fixed, checksum-verified Cell Ontology
+release `2026-06-08`:
 
 ```r
-# From AnnotationHub:
-clData <- CLload(yearAdded = "2023")
+# Fixed 2026-06-08 release (default):
+clData <- CLload()
 
-# Or from a local OBO file:
+# Or manage the same versioned OBO file explicitly:
 CLdownload(dest_file = "cl.obo")
 clData <- CLload(local_obo = "cl.obo", prefer_local = TRUE)
+
+# Legacy AnnotationHub loading remains available when requested explicitly:
+clData_2023 <- CLload(yearAdded = "2023")
 
 CLid2label("CL:0000084", clData)
 CLsearchLabel("T cell", clData, max_results = 5)
@@ -152,8 +156,8 @@ pbmc_terms$cl_depth <- CLdepth(pbmc_terms$cl_id, clData)
 
 From the pbmc3k case study used to guide the package documentation, all 9
 Seurat annotation labels were resolved to CL IDs. The same analysis loaded
-18,460 CL terms, exported CL metadata for 2,638 cells, and rolled the 9 reviewed
-annotations into 3 broader groups:
+19,154 ontology IDs (including 3,534 CL IDs), exported CL metadata for 2,638
+cells, and rolled the 9 reviewed annotations into 3 broader groups:
 
 | Seurat label | CL ID | CL label | Roll-up label |
 |---|---|---|---|
@@ -207,29 +211,51 @@ For a manuscript-style single-cell workflow inspired by the pbmc3k analysis:
 vignette("pbmc3k-workflow", package = "CellOnTools")
 ```
 
-## Depth Convention
+## Ancestor Count And Graph Distance
 
-Throughout the package, **depth is the ancestor count**: the number of distinct
-proper ancestors of a term, excluding the term itself. The root has depth 0;
-more specific terms have larger depths. Because CL is a directed acyclic graph,
-this is the cardinality of the transitive ancestor set, not the number of edges
-to one chosen root path. All `max_ancestor_count`-style arguments use this
-convention.
+`CLdepth()` reports a specificity measure called **ancestor count**: the number
+of distinct proper `CL:*` ancestors of a term. Imported BFO, CARO, and other
+non-CL nodes are excluded. In a directed acyclic graph this count is not the
+number of edges to a root.
+
+Graph-neighbourhood functions keep that concept separate:
+`CLancestors()`, `CLdescendants()`, `CLhierarchy()`, and `CLhierarchyPlot()` use
+`max_hops` to limit direct CL parent/child edges. `CLrollup()` uses
+`max_candidate_ancestor_count` only as an optional specificity cap on roll-up
+candidates; it is not a distance argument.
+
+Here, "CL-only" is a namespace rule rather than an activity-status filter.
+Obsolete CL terms remain addressable when they are present in the loaded
+ontology; inspect `clData$obsolete` when an analysis must exclude them.
 
 ## Reproducibility Notes
 
 Network-dependent functions (`CLload()`, `CLmap()`, `CLmapInteractive()`) and
 functions relying on optional packages validate inputs first and return
-actionable dependency or API errors. For scripted analyses, prefer a local OBO
-file for reproducible CL loading, guard OLS calls with `tryCatch()`, and export
-intermediate mapping, enrichment, and roll-up tables alongside figures.
+actionable dependency or API errors. The default ontology file is pinned by
+release header and MD5, while OLS mapping stops if OLS is no longer serving
+`2026-06-08`; this prevents silent mixing of releases. For scripted analyses,
+guard network calls with `tryCatch()` and export intermediate mapping,
+enrichment, and roll-up tables alongside figures.
 
 ## Data Provenance And Citation
 
 The `CellMarkerAccordion_HumanHealthy` and `CellMarkerAccordion_MouseHealthy`
 datasets are derived from the
-[CellMarkerAccordion](https://github.com/TebaldiLab/cellmarkeraccordion)
-marker-gene resource (healthy collections), harmonised to Cell Ontology terms.
+[CellMarkerAccordion Shiny data repository](https://github.com/TebaldiLab/shiny_cellmarkeraccordion)
+(healthy collections), using source commit
+`a2cc870a40df2cdd8f2c9671605b19e3f29229d7` and source-file SHA-256
+`53ec885a4e3844c8493d3fb1bb4efde29a8012073b067200d3c9e6b528887857`.
+Only positive markers are retained; source database, tissue, and weight fields
+are not, so enrichment is pooled and unweighted. Marker CL IDs and labels are
+harmonised to active terms in release `2026-06-08` (OBO MD5
+`79fcc8bc4dfa70e5de6d3912bcba1f95`), including migration of six obsolete IDs
+to their official `replaced_by` terms.
+The aggregator repository declares an MIT license for its own material,
+copyright 2022 Laboratory of RNA and Disease Data Science (RDDS). The workbook
+also combines third-party resources that may carry separate terms; the
+repository notice and licensing caveat are shipped as `COPYRIGHTS` in the
+installed package.
 When using the marker functions, please also cite the original resource:
 
 > Busarello E, Biancon G, Cimignolo I, et al. Cell Marker Accordion:

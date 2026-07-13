@@ -6,7 +6,7 @@
 \usage{
 CLdownload(
   dest_file = "cl.obo",
-  url = "https://purl.obolibrary.org/obo/cl.obo",
+  url = "https://purl.obolibrary.org/obo/cl/releases/2026-06-08/cl.obo",
   overwrite = FALSE
 )
 }
@@ -14,7 +14,10 @@ CLdownload(
 \item{dest_file}{Destination file path (default: \code{"cl.obo"} in the
 current working directory).}
 
-\item{url}{URL to download from (default: latest release from OBO Foundry).}
+\item{url}{URL to download from (default: the versioned OBO Foundry URL for
+Cell Ontology release \code{2026-06-08}). Custom URLs are structurally
+validated as Cell Ontology OBO files but are not required to match the
+package's pinned release.}
 
 \item{overwrite}{Logical; if \code{FALSE} (default), stop if the destination
 file already exists.}
@@ -24,10 +27,10 @@ Invisibly returns the normalised path to the downloaded file.
 }
 \description{
 Downloads the Cell Ontology OBO file from OBO Foundry (or a custom URL) and
-performs a lightweight header validation to confirm the file is a valid OBO
-document. For the default Cell Ontology URL, the function retries through a
-raw GitHub mirror and, on Windows, an external curl fallback to work around
-common SSL/revocation issues.
+validates the downloaded content before replacing the destination file. The
+default is the fixed \code{2026-06-08} release. Its OBO version header and MD5
+checksum are verified, and all fallback URLs point to the same tagged
+release rather than to a moving latest/master branch.
 }
 \examples{
 \dontrun{
@@ -37,8 +40,8 @@ CLdownload()
 # Download to a specific location
 CLdownload(dest_file = "data/cl.obo")
 
-# Download a specific versioned release
-CLdownload(url = "https://purl.obolibrary.org/obo/cl/releases/2023-08-24/cl.obo")
+# Download a different versioned release explicitly
+CLdownload(url = "https://purl.obolibrary.org/obo/cl/releases/2025-12-16/cl.obo")
 
 # Load the downloaded file
 clData <- CLload(local_obo = "cl.obo", prefer_local = TRUE)

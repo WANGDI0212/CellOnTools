@@ -4,7 +4,7 @@
 \alias{CLancestors}
 \title{Get Ancestors of Cell Ontology Terms}
 \usage{
-CLancestors(ids, clData, include_self = FALSE, max_ancestor_count = NULL)
+CLancestors(ids, clData, include_self = FALSE, max_hops = NULL)
 }
 \arguments{
 \item{ids}{Character vector of CL IDs.  NA and empty strings are silently
@@ -15,30 +15,25 @@ dropped.  Duplicates are preserved in the output list.}
 \item{include_self}{Logical; if \code{TRUE}, include the query term itself
 in its own ancestor list (default: \code{FALSE}).}
 
-\item{max_ancestor_count}{Maximum allowed ancestor_count difference between
-the query term and a returned ancestor (default: \code{NULL}, return all
-ancestors).  Formally, an ancestor \eqn{a} is retained when:
-\deqn{ancestor\_count(query) - ancestor\_count(a) \le max\_ancestor\_count}
-A value of 1 returns only direct parents; larger values return progressively
-more distant ancestors.}
+\item{max_hops}{\code{NULL} or a non-negative integer giving the maximum
+number of direct parent edges to traverse (default: \code{NULL}, return all
+reachable CL ancestors). A value of 0 returns no ancestors unless
+\code{include_self = TRUE}; a value of 1 returns all direct CL parents.}
 }
 \value{
 Named list of character vectors.  Each element corresponds to one
-input ID and contains the CL IDs of its ancestors.  Returns
+input ID and contains only \code{CL:*} IDs of its ancestors. Returns
 \code{character(0)} for unknown IDs.
 }
 \description{
-Returns all ancestors of each queried CL term, optionally filtered by how
-far above the query term they are (measured in ancestor_count difference).
+Returns CL-namespace ancestors of each queried term, optionally limited by
+the number of graph edges (hops) above the query.
 }
-\section{Depth convention}{
+\section{Distance convention}{
 
-Throughout this package, \strong{depth is synonymous with ancestor_count}:
-
-\deqn{ancestor\_count(id) = |\{ancestors\}| - 1}
-
-It is \emph{not} the number of edges from the root.  See \code{\link{CLdepth}}
-for a full explanation.
+Hop distance is the shortest number of direct parent edges from the query
+to an ancestor. It is deliberately distinct from the CL-only
+\code{ancestor_count} returned by \code{\link{CLdepth}}.
 }
 
 \examples{
@@ -51,8 +46,8 @@ CLancestors("CL:0000084", clData)
 # Include the query term itself
 CLancestors("CL:0000084", clData, include_self = TRUE)
 
-# Only ancestors within 3 ancestor_count steps above the query
-CLancestors("CL:0000084", clData, max_ancestor_count = 3)
+# Only ancestors within 3 direct-parent hops above the query
+CLancestors("CL:0000084", clData, max_hops = 3)
 
 # Multiple terms
 CLancestors(c("CL:0000084", "CL:0000236"), clData)

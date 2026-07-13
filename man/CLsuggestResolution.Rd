@@ -8,7 +8,7 @@ CLsuggestResolution(
   ids,
   clData,
   target_groups = 10L,
-  max_ancestor_count_values = NULL,
+  max_candidate_ancestor_count_values = NULL,
   verbose = TRUE
 )
 }
@@ -19,10 +19,10 @@ CLsuggestResolution(
 
 \item{target_groups}{Target number of final groups (default: \code{10}).}
 
-\item{max_ancestor_count_values}{Integer vector of \code{max_ancestor_count}
-values to sweep in addition to \code{NULL} (no limit).  Default:
-\code{NULL} (sweep only \code{min_group_size}, no ancestor_count filter).
-Pass e.g. \code{c(5L, 10L, 20L)} to also test ancestor_count caps.}
+\item{max_candidate_ancestor_count_values}{\code{NULL} or a vector of finite
+non-negative integer candidate ancestor-count caps to sweep in addition to
+\code{NULL} (no limit). Pass e.g. \code{c(5L, 10L, 20L)} to test several
+specificity caps.}
 
 \item{verbose}{Logical; if \code{TRUE} (default), print a summary.}
 }
@@ -34,15 +34,16 @@ Invisible list with:
 }
 }
 \description{
-Sweeps a range of \code{min_group_size} values (and optionally
-\code{max_ancestor_count} values) for \code{\link{CLrollup}} and recommends
-the parameter combination whose resulting number of groups is closest to
-\code{target_groups}.
+Exhaustively sweeps \code{min_group_size} from 1 through the number of
+unique input IDs and, optionally,
+\code{max_candidate_ancestor_count} values for \code{\link{CLrollup}}. It
+recommends the parameter combination whose resulting number of groups is
+closest to \code{target_groups}.
 }
-\section{Depth convention}{
+\section{Ancestor-count convention}{
 
-The \code{max_ancestor_count} parameter passed to \code{\link{CLrollup}}
-uses the package-wide ancestor_count definition (see \code{\link{CLdepth}}).
+Candidate caps use the CL-only ancestor_count definition from
+\code{\link{CLdepth}}. They are specificity limits, not graph-hop distances.
 }
 
 \examples{
@@ -59,7 +60,9 @@ suggestion <- CLsuggestResolution(ids, clData, target_groups = 3)
 
 # Apply recommended parameters
 result <- CLrollup(ids, clData,
-                   min_group_size     = suggestion$best$min_group_size,
-                   max_ancestor_count = suggestion$best$max_ancestor_count)
+  min_group_size = suggestion$best$min_group_size,
+  max_candidate_ancestor_count =
+    suggestion$best$max_candidate_ancestor_count
+)
 }
 }
