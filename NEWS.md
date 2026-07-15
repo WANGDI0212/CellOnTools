@@ -3,7 +3,8 @@
 ## Compatibility
 
 * The minimum supported R version is now 4.4.0. CI tests R 4.4 explicitly
-  with the full dependency set used by the other supported R versions.
+  with hard dependencies and core test/build tools; newer-R jobs exercise the
+  complete optional dependency set.
 
 ## Correctness
 
