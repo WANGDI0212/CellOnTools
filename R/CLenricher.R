@@ -71,17 +71,15 @@ CLenricher <- function(gene,
   }
   n_dedup <- length(gene_raw) - length(gene)
 
-  # ---- Validate numeric parameters ----
-  for (param_name in c("pvalueCutoff", "qvalueCutoff")) {
-    val <- get(param_name)
-    if (!is.numeric(val) || length(val) != 1L || is.na(val) || val < 0 || val > 1) {
-      stop("`", param_name, "` must be a number in [0, 1].", call. = FALSE)
-    }
-  }
-  if (minGSSize > maxGSSize) {
-    stop("`minGSSize` (", minGSSize, ") must be <= `maxGSSize` (", maxGSSize, ").",
-         call. = FALSE)
-  }
+  # ---- Validate analysis parameters ----
+  .validate_enrichment_parameters(
+    pvalueCutoff = pvalueCutoff,
+    pAdjustMethod = pAdjustMethod,
+    minGSSize = minGSSize,
+    maxGSSize = maxGSSize,
+    qvalueCutoff = qvalueCutoff,
+    readable = readable
+  )
 
   # ---- Load marker data and build term maps ----
   marker_data <- .load_marker_data(species)

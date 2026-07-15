@@ -27,15 +27,26 @@ annotations were standardised to Cell Ontology (CL), written back to cell
 metadata, rolled up to broader ontology terms, and checked against marker-gene
 enrichment.
 
-The code chunks are intentionally not evaluated during package checks because
-they require SeuratData downloads, optional Bioconductor packages, plotting
+The full workflow chunks are intentionally not evaluated during package checks
+because they require external pbmc3k data, optional Bioconductor packages, plotting
 packages, and network access for some mapping steps. Treat this vignette as a
 template for your own analysis scripts.
+
+The following small offline check is evaluated when the vignette is built, so
+the document still verifies its CellOnTools installation without downloading
+data or contacting an ontology service:
+
+```{r offline-smoke, eval = TRUE, purl = TRUE}
+human_markers <- CellOnTools::CLmarkers("human")
+stopifnot(
+  is.data.frame(human_markers),
+  all(c("CL_ID", "marker_symbol") %in% names(human_markers))
+)
+```
 
 ```{r libraries, purl = FALSE}
 library(CellOnTools)
 library(Seurat)
-library(SeuratData)
 library(ggplot2)
 ```
 
@@ -65,8 +76,9 @@ if (!file.exists(obo_file)) {
 cl_data <- CLload(local_obo = obo_file, prefer_local = TRUE, verbose = FALSE)
 stopifnot(identical(attr(cl_data, "ontology_release"), "2026-06-08"))
 
-pbmc_raw <- LoadData("pbmc3k")
-pbmc <- LoadData("pbmc3k", type = "pbmc3k.final")
+# Load these two Seurat objects from your preferred pbmc3k data source before
+# running the remainder of the workflow.
+stopifnot(exists("pbmc_raw"), exists("pbmc"))
 DefaultAssay(pbmc_raw) <- "RNA"
 DefaultAssay(pbmc) <- "RNA"
 Idents(pbmc) <- pbmc$seurat_annotations

@@ -63,9 +63,9 @@ CLload <- function(yearAdded    = NULL,
 
   if (!year_was_missing && !is.null(yearAdded)) {
     if (!is.character(yearAdded) || length(yearAdded) != 1L ||
-        is.na(yearAdded) || !nzchar(yearAdded)) {
+        is.na(yearAdded) || !grepl("^[0-9]{4}$", yearAdded)) {
       stop(
-        "`yearAdded` must be a non-empty character string (e.g. \"2023\") ",
+        "`yearAdded` must be a four-digit year string (e.g. \"2023\") ",
         "or NULL.",
         call. = FALSE
       )
@@ -183,11 +183,11 @@ CLload <- function(yearAdded    = NULL,
   }
 
   expected_md5 <- .cl_release_md5(release)
-  cache_valid <- FALSE
   cache_error <- NULL
-
-  if (file.exists(cache_file)) {
-    cache_valid <- tryCatch(
+  validate_cache <- function() {
+    cache_error <<- NULL
+    if (!file.exists(cache_file)) return(FALSE)
+    tryCatch(
       {
         .validate_cl_obo_file(
           cache_file,
@@ -203,17 +203,35 @@ CLload <- function(yearAdded    = NULL,
     )
   }
 
+  cache_valid <- validate_cache()
   if (!cache_valid) {
-    if (verbose) {
-      if (file.exists(cache_file)) {
-        message("Cached Cell Ontology file failed validation: ", cache_error)
-      }
-      message("Downloading fixed Cell Ontology release ", release, "...")
-    }
-    CLdownload(
-      dest_file = cache_file,
-      url = .cl_release_urls(release)[1L],
-      overwrite = TRUE
+    # Re-check only after acquiring the same lock used by CLdownload(). Another
+    # process may have populated the cache while this process was waiting.
+    lock_dir <- .acquire_cl_file_lock(cache_file)
+    tryCatch(
+      {
+        cache_valid <- validate_cache()
+        if (!cache_valid) {
+          if (verbose) {
+            if (file.exists(cache_file)) {
+              message("Cached Cell Ontology file failed validation: ", cache_error)
+            }
+            message("Downloading fixed Cell Ontology release ", release, "...")
+          }
+          .download_cl_obo_locked(
+            dest_file = cache_file,
+            url = .cl_release_urls(release)[1L],
+            overwrite = TRUE
+          )
+          cache_valid <- TRUE
+        } else if (verbose) {
+          message(
+            "Loading cached Cell Ontology release ", release,
+            " populated by another process..."
+          )
+        }
+      },
+      finally = .release_cl_file_lock(lock_dir)
     )
   } else if (verbose) {
     message("Loading cached Cell Ontology release ", release, "...")
@@ -301,14 +319,24 @@ CLload <- function(yearAdded    = NULL,
     stop("No Cell Ontology entries found in AnnotationHub.", call. = FALSE)
   }
 
+  entry_years <- vapply(
+    as.character(meta_cl$rdatadateadded),
+    function(value) {
+      if (is.na(value) || !nzchar(value)) return(NA_character_)
+      match <- regexpr("(?<![0-9])[0-9]{4}(?![0-9])", value, perl = TRUE)
+      if (match[1L] < 0L) return(NA_character_)
+      regmatches(value, match)
+    },
+    character(1L),
+    USE.NAMES = FALSE
+  )
+
   selected_year <- yearAdded
   if (is.null(selected_year)) {
-    years_found <- regmatches(
-      meta_cl$rdatadateadded,
-      regexpr("\\d{4}", meta_cl$rdatadateadded)
+    available_years <- sort(
+      unique(entry_years[!is.na(entry_years)]),
+      decreasing = TRUE
     )
-    available_years <- sort(unique(years_found[nzchar(years_found)]),
-                            decreasing = TRUE)
     if (length(available_years) == 0L) {
       stop("Could not determine available years from AnnotationHub metadata.",
            call. = FALSE)
@@ -322,7 +350,7 @@ CLload <- function(yearAdded    = NULL,
     }
   }
 
-  year_match <- grepl(selected_year, meta_cl$rdatadateadded)
+  year_match <- !is.na(entry_years) & entry_years == selected_year
   tmp <- meta_cl[year_match, , drop = FALSE]
   if (nrow(tmp) == 0L) {
     stop(

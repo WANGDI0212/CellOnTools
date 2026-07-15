@@ -20,6 +20,13 @@ test_that("release metadata is fixed and normalised consistently", {
   )
 })
 
+test_that("AnnotationHub year selection requires an exact four-digit year", {
+  expect_error(CLload(yearAdded = "."), "four-digit year")
+  expect_error(CLload(yearAdded = "["), "four-digit year")
+  expect_error(CLload(yearAdded = "202"), "four-digit year")
+  expect_error(CLload(yearAdded = "20230"), "four-digit year")
+})
+
 test_that("OLS release guard accepts only the pinned release", {
   testthat::local_mocked_bindings(
     .ols_cl_version = function() "2026-06-08",
@@ -68,4 +75,33 @@ test_that("mapping functions stop before search when OLS release drifts", {
     CLmapInteractive("T cell", auto_accept = TRUE),
     "pinned to 2026-06-08"
   )
+})
+
+test_that("release cache is rechecked after acquiring the writer lock", {
+  cache_file <- tempfile(fileext = ".obo")
+  on.exit(unlink(cache_file), add = TRUE)
+  download_calls <- 0L
+
+  testthat::local_mocked_bindings(
+    .cl_cache_file = function(release) cache_file,
+    .validate_cl_obo_file = function(path, expected_release = NULL,
+                                     expected_md5 = NULL) {
+      if (!file.exists(path)) stop("missing cache")
+      invisible(TRUE)
+    },
+    .acquire_cl_file_lock = function(dest_file, ...) {
+      writeLines("populated by another process", cache_file)
+      paste0(cache_file, ".lock")
+    },
+    .release_cl_file_lock = function(lock_dir) invisible(NULL),
+    .download_cl_obo_locked = function(...) {
+      download_calls <<- download_calls + 1L
+    },
+    .load_cl_obo_file = function(...) "loaded",
+    .package = "CellOnTools"
+  )
+
+  result <- CellOnTools:::.load_cl_release(verbose = FALSE)
+  expect_identical(result, "loaded")
+  expect_identical(download_calls, 0L)
 })

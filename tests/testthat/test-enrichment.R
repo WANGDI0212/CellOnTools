@@ -12,9 +12,10 @@ test_that("CLenricher returns an enrichResult for T-cell markers", {
   expect_s4_class(res, "enrichResult")
   df <- as.data.frame(res)
   expect_gt(nrow(df), 0L)
-  # The most enriched terms should be T-cell related.
-  expect_true(any(grepl("T cell", utils::head(df$Description, 5L),
-                        ignore.case = TRUE)))
+  # Assert biological content without depending on clusterProfiler's tie/order
+  # behaviour across releases.
+  expect_true(any(grepl("T cell", df$Description, ignore.case = TRUE)))
+  expect_true(all(is.finite(df$p.adjust) & df$p.adjust >= 0 & df$p.adjust <= 1))
 })
 
 test_that("CLenricher converts Entrez IDs to symbols when readable = TRUE", {
@@ -22,13 +23,20 @@ test_that("CLenricher converts Entrez IDs to symbols when readable = TRUE", {
 
   res <- suppressMessages(
     CLenricher(c("915", "916", "925", "926", "920"),
-               geneType = "entrezid", species = "human", readable = TRUE)
+               geneType = "entrezid", species = "human", readable = TRUE,
+               pvalueCutoff = 1, qvalueCutoff = 1)
   )
-  testthat::skip_if(is.null(res) || nrow(as.data.frame(res)) == 0L,
-                    "no enrichment for this gene set")
+  expect_s4_class(res, "enrichResult")
+  expect_gt(nrow(as.data.frame(res)), 0L)
   gene_ids <- as.data.frame(res)$geneID
   # After conversion the geneID column holds symbols, not bare Entrez numbers.
   expect_false(any(grepl("^[0-9]+(/[0-9]+)*$", gene_ids)))
+  # Keep the metadata slots in sync with the readable result table so that
+  # downstream DOSE/clusterProfiler methods do not try to convert it again.
+  expect_true(res@readable)
+  expect_identical(res@keytype, "ENTREZID")
+  expect_true(all(res@gene %in% names(res@gene2Symbol)))
+  expect_identical(unname(res@gene2Symbol["915"]), "CD3D")
 })
 
 test_that("CLenricher validates its inputs", {
@@ -45,6 +53,12 @@ test_that("CLenricher validates its inputs", {
                                 minGSSize = 100, maxGSSize = 10)),
     "must be <="
   )
+  expect_error(CLenricher("CD3D", minGSSize = 1.5),
+               "positive integer scalar")
+  expect_error(CLenricher("CD3D", pAdjustMethod = "not-a-method"),
+               "pAdjustMethod")
+  expect_error(CLenricher("CD3D", readable = NA),
+               "readable.*TRUE or FALSE")
 })
 
 test_that("CLcompareCluster compares multiple gene clusters", {
@@ -63,6 +77,48 @@ test_that("CLcompareCluster compares multiple gene clusters", {
   expect_setequal(levels(df$Cluster), c("Tcell", "Bcell", "Mono"))
 })
 
+test_that("CLcompareCluster keeps readable S4 metadata internally consistent", {
+  testthat::skip_if_not_installed("clusterProfiler")
+
+  clusters <- list(
+    Tcell = c("915", "916", "925", "926", "920"),
+    Myeloid = c("929", "933", "942", "945")
+  )
+  res <- suppressMessages(
+    CLcompareCluster(
+      clusters,
+      geneType = "entrezid",
+      species = "human",
+      readable = TRUE,
+      pvalueCutoff = 1,
+      qvalueCutoff = 1
+    )
+  )
+
+  expect_s4_class(res, "compareClusterResult")
+  expect_gt(nrow(as.data.frame(res)), 0L)
+  expect_true(res@readable)
+  expect_identical(res@keytype, "ENTREZID")
+  expect_true(all(unlist(res@geneClusters, use.names = FALSE) %in%
+                    names(res@gene2Symbol)))
+  expect_false(any(grepl("^[0-9]+(/[0-9]+)*$", as.data.frame(res)$geneID)))
+})
+
+test_that("CLcompareCluster rejects ambiguous cluster names", {
+  testthat::skip_if_not_installed("clusterProfiler")
+
+  clusters <- list("CD3D", "MS4A1")
+
+  names(clusters) <- c("A", NA_character_)
+  expect_error(CLcompareCluster(clusters), "must not be NA")
+
+  names(clusters) <- c("A", "A")
+  expect_error(CLcompareCluster(clusters), "must be unique")
+
+  names(clusters) <- c("A", "   ")
+  expect_error(CLcompareCluster(clusters), "whitespace-only")
+})
+
 test_that("CLcompareCluster errors on empty clusters unless told to drop them", {
   testthat::skip_if_not_installed("clusterProfiler")
 
@@ -71,4 +127,6 @@ test_that("CLcompareCluster errors on empty clusters unless told to drop them", 
     suppressMessages(CLcompareCluster(clusters, species = "human")),
     "no valid genes"
   )
+  expect_error(CLcompareCluster(list(A = "CD3D"), drop_empty_clusters = NA),
+               "drop_empty_clusters.*TRUE or FALSE")
 })

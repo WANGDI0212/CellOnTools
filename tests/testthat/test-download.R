@@ -175,3 +175,116 @@ test_that("default download rejects a wrong release without replacing a file", {
   )
   expect_equal(readLines(dest, warn = FALSE), "existing file")
 })
+
+test_that("CLdownload rejects missing and blank scalar arguments early", {
+  expect_error(CLdownload(dest_file = NA_character_), "dest_file")
+  expect_error(CLdownload(dest_file = "   "), "dest_file")
+  expect_error(CLdownload(url = NA_character_), "url")
+  expect_error(CLdownload(url = "   "), "url")
+})
+
+test_that("validated downloads are committed with same-directory renames", {
+  directory <- tempfile("cellontools-commit-")
+  dir.create(directory)
+  on.exit(unlink(directory, recursive = TRUE, force = TRUE), add = TRUE)
+
+  dest <- file.path(directory, "cl.obo")
+  incoming <- file.path(directory, "incoming.download")
+  writeLines("old", dest)
+  writeLines("new", incoming)
+
+  expect_no_error(
+    CellOnTools:::.commit_cl_download(incoming, dest, overwrite = TRUE)
+  )
+  expect_equal(readLines(dest, warn = FALSE), "new")
+  expect_false(file.exists(incoming))
+  expect_length(list.files(directory, pattern = "backup", all.files = TRUE), 0L)
+})
+
+test_that("download destination locks are acquired and released", {
+  directory <- tempfile("cellontools-lock-")
+  dir.create(directory)
+  on.exit(unlink(directory, recursive = TRUE, force = TRUE), add = TRUE)
+  dest <- file.path(directory, "cl.obo")
+
+  lock <- CellOnTools:::.acquire_cl_file_lock(dest, timeout = 1)
+  expect_true(dir.exists(lock))
+  expect_true(file.exists(file.path(lock, "owner")))
+
+  CellOnTools:::.release_cl_file_lock(lock)
+  expect_false(dir.exists(lock))
+})
+
+test_that("download retries respect a bounded total time budget", {
+  dest <- tempfile(fileext = ".obo")
+  on.exit(unlink(dest), add = TRUE)
+  old_options <- options(
+    CellOnTools.download_timeout = 1,
+    CellOnTools.download_total_timeout = 1,
+    timeout = 17,
+    download.file.method = "auto"
+  )
+  on.exit(options(old_options), add = TRUE)
+
+  testthat::local_mocked_bindings(
+    .download_obo_file = function(args) {
+      Sys.sleep(1.05)
+      stop("mock network timeout")
+    },
+    .package = "CellOnTools"
+  )
+
+  expect_error(
+    suppressMessages(CLdownload(
+      dest_file = dest,
+      url = "https://example.invalid/cl.obo"
+    )),
+    "total download time budget of 1 seconds exceeded"
+  )
+  expect_identical(getOption("timeout"), 17)
+})
+
+test_that("auto download method is not retried as explicit libcurl", {
+  dest <- tempfile(fileext = ".obo")
+  on.exit(unlink(dest), add = TRUE)
+  old_options <- options(
+    CellOnTools.download_timeout = 5,
+    CellOnTools.download_total_timeout = 30,
+    download.file.method = "auto"
+  )
+  on.exit(options(old_options), add = TRUE)
+  attempted_methods <- character()
+
+  testthat::local_mocked_bindings(
+    .download_obo_file = function(args) {
+      attempted_methods <<- c(attempted_methods, args$method)
+      stop("mock failure")
+    },
+    .package = "CellOnTools"
+  )
+
+  expect_error(
+    suppressMessages(CLdownload(
+      dest_file = dest,
+      url = "https://example.invalid/cl.obo"
+    )),
+    "Download failed"
+  )
+  expect_true("auto" %in% attempted_methods)
+  expect_false("libcurl" %in% attempted_methods)
+})
+
+test_that("download timeout options reject invalid values", {
+  dest <- tempfile(fileext = ".obo")
+  on.exit(unlink(dest), add = TRUE)
+  old_options <- options(CellOnTools.download_timeout = 0)
+  on.exit(options(old_options), add = TRUE)
+
+  expect_error(
+    suppressMessages(CLdownload(
+      dest_file = dest,
+      url = "https://example.invalid/cl.obo"
+    )),
+    "CellOnTools.download_timeout"
+  )
+})

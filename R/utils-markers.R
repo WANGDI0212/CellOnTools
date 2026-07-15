@@ -33,8 +33,7 @@
   )
 
   marker_data <- tryCatch({
-    utils::data(list = obj_name, package = "CellOnTools", envir = environment())
-    get(obj_name, envir = environment(), inherits = FALSE)
+    .get_marker_data_object(obj_name)
   }, error = function(e) {
     stop("Failed to load marker data for species '", species, "'.\n",
          "Make sure the package data is properly installed.\n",
@@ -116,6 +115,16 @@
   marker_data
 }
 
+.get_marker_data_object <- function(obj_name) {
+  data_env <- new.env(parent = emptyenv())
+  utils::data(
+    list = obj_name,
+    package = "CellOnTools",
+    envir = data_env
+  )
+  get(obj_name, envir = data_env, inherits = FALSE)
+}
+
 # ----------------------------------------------------------------------------
 # .build_term_maps
 # Build TERM2GENE and TERM2NAME data frames from marker_data.
@@ -167,9 +176,64 @@
 }
 
 # ----------------------------------------------------------------------------
+# .validate_enrichment_parameters
+# Validate arguments shared by CLenricher() and CLcompareCluster().
+# ----------------------------------------------------------------------------
+.validate_enrichment_parameters <- function(pvalueCutoff,
+                                            pAdjustMethod,
+                                            minGSSize,
+                                            maxGSSize,
+                                            qvalueCutoff,
+                                            readable) {
+  probabilities <- list(
+    pvalueCutoff = pvalueCutoff,
+    qvalueCutoff = qvalueCutoff
+  )
+  for (param_name in names(probabilities)) {
+    value <- probabilities[[param_name]]
+    if (!is.numeric(value) || length(value) != 1L ||
+        !is.finite(value) || value < 0 || value > 1) {
+      stop("`", param_name, "` must be a finite number in [0, 1].",
+           call. = FALSE)
+    }
+  }
+
+  if (!is.character(pAdjustMethod) || length(pAdjustMethod) != 1L ||
+      is.na(pAdjustMethod) || !pAdjustMethod %in% stats::p.adjust.methods) {
+    stop(
+      "`pAdjustMethod` must be one of: ",
+      paste(stats::p.adjust.methods, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+
+  gene_set_sizes <- list(minGSSize = minGSSize, maxGSSize = maxGSSize)
+  for (param_name in names(gene_set_sizes)) {
+    value <- gene_set_sizes[[param_name]]
+    if (!is.numeric(value) || length(value) != 1L ||
+        !is.finite(value) || value < 1 || value != floor(value) ||
+        value > .Machine$integer.max) {
+      stop("`", param_name, "` must be a positive integer scalar.",
+           call. = FALSE)
+    }
+  }
+  if (minGSSize > maxGSSize) {
+    stop("`minGSSize` (", minGSSize, ") must be <= `maxGSSize` (",
+         maxGSSize, ").", call. = FALSE)
+  }
+
+  if (!is.logical(readable) || length(readable) != 1L || is.na(readable)) {
+    stop("`readable` must be TRUE or FALSE.", call. = FALSE)
+  }
+
+  invisible(TRUE)
+}
+
+# ----------------------------------------------------------------------------
 # .convert_result_gene_ids
-# Replace "/" -separated Entrez IDs with gene symbols in enrichment result
-# columns (geneID and/or core_enrichment).
+# Make an enrichment result readable while preserving the S4 object contract.
+# In addition to replacing "/"-separated Entrez IDs in the result table, this
+# synchronises the metadata slots used by DOSE and clusterProfiler methods.
 #
 # Parameters
 #   result : enrichResult or compareClusterResult object
@@ -182,11 +246,26 @@
                                      cols = c("geneID", "core_enrichment")) {
   slot <- match.arg(slot)
 
+  required_slots <- c(slot, "gene2Symbol", "keytype", "readable")
+  if (!all(required_slots %in% methods::slotNames(result))) {
+    stop("Unsupported enrichment result object.", call. = FALSE)
+  }
+  if (!is.character(map) || is.null(names(map)) ||
+      anyNA(names(map)) || any(!nzchar(names(map))) ||
+      anyDuplicated(names(map))) {
+    stop("`map` must be a named character vector with unique, non-empty names.",
+         call. = FALSE)
+  }
+
   df <- methods::slot(result, slot)
 
   .convert_col <- function(gene_str) {
-    ids <- strsplit(gene_str, "/")[[1L]]
-    syms <- ifelse(ids %in% names(map), map[ids], ids)
+    if (is.na(gene_str) || !nzchar(gene_str)) {
+      return(gene_str)
+    }
+    ids <- strsplit(gene_str, "/", fixed = TRUE)[[1L]]
+    syms <- unname(map[ids])
+    syms[is.na(syms) | !nzchar(syms)] <- ids[is.na(syms) | !nzchar(syms)]
     paste(syms, collapse = "/")
   }
 
@@ -194,6 +273,20 @@
     df[[col]] <- vapply(df[[col]], .convert_col, character(1L))
   }
 
+  source_ids <- if (identical(slot, "result")) {
+    result@gene
+  } else {
+    unname(unlist(result@geneClusters, use.names = FALSE))
+  }
+  source_ids <- unique(as.character(source_ids))
+  source_ids <- source_ids[!is.na(source_ids) & nzchar(source_ids)]
+  symbols <- unname(map[source_ids])
+  unmapped <- is.na(symbols) | !nzchar(symbols)
+  symbols[unmapped] <- source_ids[unmapped]
+
   methods::slot(result, slot) <- df
+  result@gene2Symbol <- stats::setNames(symbols, source_ids)
+  result@keytype <- "ENTREZID"
+  result@readable <- TRUE
   result
 }

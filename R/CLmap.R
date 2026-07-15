@@ -87,51 +87,6 @@ CLmap <- function(query,
                   max_results = 1L,
                   verbose     = TRUE) {
 
-  # ========================================================================
-  # Private helpers
-  # ========================================================================
-
-  .canonical_query <- function(q) {
-    q <- gsub("[_/\\-]+", " ", q)
-    q <- gsub("\\bcells\\b", "cell", q, ignore.case = TRUE)
-    q <- gsub("\\s+", " ", q)
-    trimws(q)
-  }
-
-  .normalize_query <- function(q) {
-    tolower(.canonical_query(q))
-  }
-
-  .restore_common_cell_case <- function(q) {
-    q <- gsub("\\bnkt\\b", "NKT", q, ignore.case = TRUE)
-    q <- gsub("\\bnk\\b",  "NK",  q, ignore.case = TRUE)
-    q <- gsub("\\bcd([0-9]+)\\b", "CD\\1", q, ignore.case = TRUE)
-    q <- gsub("\\bt cell\\b", "T cell", q, ignore.case = TRUE)
-    q <- gsub("\\bb cell\\b", "B cell", q, ignore.case = TRUE)
-    q
-  }
-
-  .search_terms <- function(q_display) {
-    unique(c(
-      trimws(q_display),
-      .canonical_query(q_display),
-      .restore_common_cell_case(.canonical_query(q_display))
-    ))
-  }
-
-  # Local reranking: exact > normalised-exact > startsWith > contains > OLS order
-  .rerank <- function(df_cl, query_actual) {
-    if (nrow(df_cl) <= 1L) return(df_cl)
-    lbl_lower <- tolower(df_cl$label)
-    q_lower   <- tolower(query_actual)
-    score <- ifelse(lbl_lower == q_lower,                          1L,
-             ifelse(.normalize_query(lbl_lower) == q_lower,        2L,
-             ifelse(startsWith(lbl_lower, q_lower),                3L,
-             ifelse(grepl(q_lower, lbl_lower, fixed = TRUE),       4L,
-                                                                   5L))))
-    df_cl[order(score, seq_len(nrow(df_cl))), , drop = FALSE]
-  }
-
   .empty_row <- function(q_orig, q_display, q_actual, status, error = NA_character_,
                          rank = 1L) {
     data.frame(query_original = q_orig, query_display = q_display,
@@ -140,71 +95,6 @@ CLmap <- function(query,
                error_message = error, rank = as.integer(rank),
                ontology_release = .CL_RELEASE,
                stringsAsFactors = FALSE)
-  }
-
-  .search_one <- function(q_display, q_actual, max_results, verbose) {
-    rows <- max(20L, max_results)
-    terms <- .search_terms(q_display)
-    errors <- character(0)
-    dfs <- list()
-
-    for (term in terms) {
-      df <- tryCatch({
-        obj <- rols::OlsSearch(q = term, ontology = "cl", type = "class",
-                               groupField = TRUE, obsoletes = FALSE,
-                               rows = rows)
-        df  <- as(rols::olsSearch(obj), "data.frame")
-
-        if (!all(c("label", "obo_id") %in% colnames(df))) {
-          stop("OLS result missing required columns: label, obo_id.")
-        }
-
-        df_cl <- df[grep("^CL:\\d+$", df$obo_id),
-                    c("label", "obo_id"), drop = FALSE]
-        df_cl
-      }, error = function(e) {
-        errors <<- c(errors, paste0(term, ": ", conditionMessage(e)))
-        NULL
-      })
-
-      if (!is.null(df) && nrow(df) > 0L) {
-        dfs[[length(dfs) + 1L]] <- df
-      }
-    }
-
-    if (length(dfs) == 0L) {
-      if (length(errors) > 0L) {
-        err <- paste(unique(errors), collapse = " | ")
-        if (verbose) warning("Search failed for '", q_actual, "': ",
-                             err, call. = FALSE)
-        return(list(status = "api_error", error = err, data = NULL))
-      }
-      return(list(status = "no_match", error = NA_character_, data = NULL))
-    }
-
-    df_cl <- do.call(rbind, dfs)
-    df_cl <- df_cl[!duplicated(df_cl[, c("label", "obo_id")]), , drop = FALSE]
-
-    if (nrow(df_cl) == 0L) {
-      return(list(status = "no_match", error = NA_character_, data = NULL))
-    }
-
-    df_cl <- .rerank(df_cl, q_actual)
-    df_cl <- df_cl[seq_len(min(nrow(df_cl), max_results)), , drop = FALSE]
-
-    list(
-      status = "matched",
-      error  = NA_character_,
-      data   = data.frame(
-        query_display = rep(q_display, nrow(df_cl)),
-        query_actual  = rep(q_actual,  nrow(df_cl)),
-        cl_label      = df_cl$label,
-        cl_id         = df_cl$obo_id,
-        rank          = seq_len(nrow(df_cl)),
-        ontology_release = .CL_RELEASE,
-        stringsAsFactors = FALSE
-      )
-    )
   }
 
   # ========================================================================
@@ -216,46 +106,45 @@ CLmap <- function(query,
   if (missing(query) || is.null(query) || length(query) == 0L) {
     stop("`query` must be a non-empty character vector.", call. = FALSE)
   }
-  query_original_all <- as.character(query)
+  prepared <- .map_prepare_queries(query)
+  query_original_all <- prepared$original
   n_input <- length(query_original_all)
 
-  if (!is.numeric(max_results) || length(max_results) != 1L ||
-      is.na(max_results) || max_results < 1L) {
-    stop("`max_results` must be a positive integer.", call. = FALSE)
-  }
-  max_results <- as.integer(max_results)
+  max_results <- .validate_integer_scalar(
+    max_results,
+    "max_results",
+    minimum = 1L
+  )
 
   if (max_results > 1L && returnType != "all") {
     stop("When max_results > 1, returnType must be 'all'.", call. = FALSE)
   }
-  if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
-    stop("`verbose` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (!requireNamespace("rols", quietly = TRUE)) {
-    stop("Package 'rols' is required. Install with: BiocManager::install('rols')",
-         call. = FALSE)
-  }
+  verbose <- .validate_logical_scalar(verbose, "verbose")
 
   # ========================================================================
   # Identify valid queries and normalise
   # ========================================================================
 
-  valid_idx <- !is.na(query_original_all) & nzchar(trimws(query_original_all))
+  valid_idx <- prepared$valid
   n_valid   <- sum(valid_idx)
 
   if (verbose) {
     message("Processing ", n_input, " input quer",
             ifelse(n_input == 1L, "y", "ies"), "...")
     if (any(!valid_idx))
-      message("  Note: ", sum(!valid_idx), " NA/empty quer",
+      message("  Note: ", sum(!valid_idx), " invalid quer",
               ifelse(sum(!valid_idx) == 1L, "y", "ies"),
               " will return invalid_input")
   }
 
-  query_display_all <- query_original_all
-  query_actual_all  <- rep(NA_character_, n_input)
-  if (n_valid > 0L) {
-    query_actual_all[valid_idx] <- .normalize_query(query_original_all[valid_idx])
+  query_display_all <- prepared$display
+  query_actual_all  <- prepared$normalized
+
+  if (n_valid > 0L && !requireNamespace("rols", quietly = TRUE)) {
+    stop(
+      "Package 'rols' is required. Install with: BiocManager::install('rols')",
+      call. = FALSE
+    )
   }
 
   # ========================================================================
@@ -285,9 +174,13 @@ CLmap <- function(query,
 
   for (i in seq_along(query_actual_unique)) {
     q_actual  <- query_actual_unique[i]
-    q_display <- rep_display[[q_actual]]
+    q_display <- unname(rep_display[i])
     if (verbose) message("  [", i, "/", n_unique, "] Searching: ", q_actual)
-    search_results[[q_actual]] <- .search_one(q_display, q_actual, max_results, verbose)
+    search_results[[i]] <- .map_search_candidates(
+      q_display,
+      max_results,
+      verbose = verbose
+    )
   }
 
   # ========================================================================
@@ -305,24 +198,25 @@ CLmap <- function(query,
       return(.empty_row(q_orig, q_display, NA_character_, "invalid_input"))
     }
 
-    sr <- search_results[[q_actual]]
+    sr <- search_results[[match(q_actual, query_actual_unique)]]
     if (is.null(sr)) {
       return(.empty_row(q_orig, q_display, q_actual, "api_error",
                         "Internal error: missing cached result."))
     }
 
-    if (identical(sr$status, "matched") && !is.null(sr$data) && nrow(sr$data) > 0L) {
-      return(do.call(rbind, lapply(seq_len(nrow(sr$data)), function(j) {
+    if (identical(sr$status, "matched") && nrow(sr$candidates) > 0L) {
+      return(do.call(rbind, lapply(seq_len(nrow(sr$candidates)), function(j) {
         data.frame(query_original = q_orig, query_display = q_display,
-                   query_actual = q_actual, cl_label = sr$data$cl_label[j],
-                   cl_id = sr$data$cl_id[j], match_status = "matched",
-                   error_message = NA_character_, rank = as.integer(sr$data$rank[j]),
+                   query_actual = q_actual, cl_label = sr$candidates$cl_label[j],
+                   cl_id = sr$candidates$cl_id[j], match_status = "matched",
+                   error_message = NA_character_,
+                   rank = as.integer(sr$candidates$rank[j]),
                    ontology_release = .CL_RELEASE,
                    stringsAsFactors = FALSE)
       })))
     }
 
-    .empty_row(q_orig, q_display, q_actual, sr$status, sr$error)
+    .empty_row(q_orig, q_display, q_actual, sr$status, sr$error_message)
   })
 
   df <- do.call(rbind, results_list)

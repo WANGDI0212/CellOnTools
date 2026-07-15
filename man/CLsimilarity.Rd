@@ -31,7 +31,9 @@ terms' ICs; typically between 0 and 1.
 \code{NULL}, auto-computed via \code{ontologySimilarity::descendants_IC()}).
 If supplied, must be a named numeric vector covering \code{id1},
 \code{id2}, and every ancestor of either term.  A complete vector returned
-by \code{ontologySimilarity::descendants_IC()} satisfies this requirement.}
+by \code{ontologySimilarity::descendants_IC()} satisfies this requirement.
+Values must be finite and non-negative, and names must be unique and
+non-empty.}
 }
 \value{
 A single numeric similarity score.

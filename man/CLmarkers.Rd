@@ -46,14 +46,10 @@ notice is retained in the installed package's \code{COPYRIGHTS} file. The
 workbook combines third-party resources that may carry separate terms.
 }
 \examples{
-\dontrun{
 human_markers <- CLmarkers("human")
 head(human_markers)
 
-mouse_markers <- CLmarkers("mouse")
-
 # Markers for a specific cell type
 t_cell_markers <- subset(human_markers, CL_label == "T cell")
-print(t_cell_markers$marker_symbol)
-}
+head(t_cell_markers$marker_symbol)
 }

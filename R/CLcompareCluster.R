@@ -69,8 +69,33 @@ CLcompareCluster <- function(geneClusters,
   if (missing(geneClusters) || !is.list(geneClusters) || length(geneClusters) == 0L) {
     stop("`geneClusters` must be a non-empty named list of gene vectors.", call. = FALSE)
   }
-  if (is.null(names(geneClusters)) || any(!nzchar(names(geneClusters)))) {
+  cluster_names <- names(geneClusters)
+  if (is.null(cluster_names)) {
     stop("`geneClusters` must be a named list with non-empty names.", call. = FALSE)
+  }
+  invalid_names <- is.na(cluster_names) | !nzchar(trimws(cluster_names))
+  if (any(invalid_names)) {
+    stop("`geneClusters` names must not be NA, empty, or whitespace-only.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(cluster_names)) {
+    duplicate_names <- unique(cluster_names[duplicated(cluster_names)])
+    stop("`geneClusters` names must be unique; duplicated name(s): ",
+         paste(duplicate_names, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # ---- Validate analysis parameters ----
+  .validate_enrichment_parameters(
+    pvalueCutoff = pvalueCutoff,
+    pAdjustMethod = pAdjustMethod,
+    minGSSize = minGSSize,
+    maxGSSize = maxGSSize,
+    qvalueCutoff = qvalueCutoff,
+    readable = readable
+  )
+  if (!is.logical(drop_empty_clusters) ||
+      length(drop_empty_clusters) != 1L || is.na(drop_empty_clusters)) {
+    stop("`drop_empty_clusters` must be TRUE or FALSE.", call. = FALSE)
   }
 
   # Clean each cluster
@@ -94,18 +119,6 @@ CLcompareCluster <- function(geneClusters,
            paste(empty_clusters, collapse = ", "),
            "\nSet drop_empty_clusters = TRUE to skip them.", call. = FALSE)
     }
-  }
-
-  # ---- Validate numeric parameters ----
-  for (param_name in c("pvalueCutoff", "qvalueCutoff")) {
-    val <- get(param_name)
-    if (!is.numeric(val) || length(val) != 1L || is.na(val) || val < 0 || val > 1) {
-      stop("`", param_name, "` must be a number in [0, 1].", call. = FALSE)
-    }
-  }
-  if (minGSSize > maxGSSize) {
-    stop("`minGSSize` (", minGSSize, ") must be <= `maxGSSize` (", maxGSSize, ").",
-         call. = FALSE)
   }
 
   # ---- Load marker data and build term maps ----

@@ -30,7 +30,9 @@ See \code{\link{CLsimilarity}} for details.}
 \code{NULL}, auto-computed).  If supplied, it must be a named numeric
 vector covering every term in \code{ids1} and \code{ids2}, together with
 all ancestors of those terms.  A complete vector returned by
-\code{ontologySimilarity::descendants_IC()} satisfies this requirement.}
+\code{ontologySimilarity::descendants_IC()} satisfies this requirement.
+Values must be finite and non-negative, and names must be unique and
+non-empty.}
 
 \item{verbose}{Logical; if \code{TRUE} (default), print progress messages.}
 }

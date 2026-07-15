@@ -23,14 +23,6 @@ selected AnnotationHub/local OBO source.
 \item Performing marker-gene enrichment against bundled marker annotations.
 }
 }
-\seealso{
-Useful links:
-\itemize{
-  \item \url{https://github.com/WANGDI0212/CellOnTools}
-  \item Report bugs at \url{https://github.com/WANGDI0212/CellOnTools/issues}
-}
-
-}
 \author{
 \strong{Maintainer}: Di Wang \email{wangdi0001@foxmail.com}
 

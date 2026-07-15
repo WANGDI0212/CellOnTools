@@ -18,6 +18,8 @@
 #'   vector covering every term in \code{ids1} and \code{ids2}, together with
 #'   all ancestors of those terms.  A complete vector returned by
 #'   \code{ontologySimilarity::descendants_IC()} satisfies this requirement.
+#'   Values must be finite and non-negative, and names must be unique and
+#'   non-empty.
 #' @param verbose Logical; if \code{TRUE} (default), print progress messages.
 #'
 #' @return Numeric matrix with \code{length(ids1)} rows and \code{length(ids2)}

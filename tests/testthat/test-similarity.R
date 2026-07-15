@@ -54,6 +54,47 @@ test_that("CLsimilarity validates IC coverage for both ancestry branches", {
   )
 })
 
+test_that("custom information content is finite, non-negative, and unambiguous", {
+  testthat::skip_if_not_installed("ontologyIndex")
+  testthat::skip_if_not_installed("ontologySimilarity")
+  cl <- test_cl_dag()
+  full_ic <- ontologySimilarity::descendants_IC(cl)
+  id1 <- "CL:0000300"
+  id2 <- "CL:0000400"
+
+  expect_invalid_ic <- function(ic, pattern) {
+    expect_error(
+      CLsimilarity(id1, id2, cl, information_content = ic),
+      pattern
+    )
+    expect_error(
+      CLsimilarityMatrix(
+        id1, id2, clData = cl, information_content = ic, verbose = FALSE
+      ),
+      pattern
+    )
+  }
+
+  non_finite <- full_ic
+  non_finite[[1L]] <- NA_real_
+  expect_invalid_ic(non_finite, "values must all be finite")
+
+  non_finite[[1L]] <- Inf
+  expect_invalid_ic(non_finite, "values must all be finite")
+
+  negative <- full_ic
+  negative[[1L]] <- -1
+  expect_invalid_ic(negative, "values must be non-negative")
+
+  unnamed_term <- full_ic
+  names(unnamed_term)[[1L]] <- " "
+  expect_invalid_ic(unnamed_term, "whitespace-only")
+
+  duplicated_term <- full_ic
+  names(duplicated_term)[[2L]] <- names(duplicated_term)[[1L]]
+  expect_invalid_ic(duplicated_term, "names must be unique")
+})
+
 test_that("CLsimilarityMatrix preserves input order and duplicates", {
   testthat::skip_if_not_installed("ontologyIndex")
   testthat::skip_if_not_installed("ontologySimilarity")

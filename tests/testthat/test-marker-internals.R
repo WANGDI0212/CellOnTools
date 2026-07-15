@@ -42,7 +42,13 @@ test_that(".make_entrez2symbol_map builds a first-wins lookup", {
 
 test_that(".load_marker_data validates required columns", {
   bad <- mock_marker_df()[, c("species", "CL_ID")]
-  # Simulate the column check used inside .load_marker_data().
-  required <- c("species", "CL_ID", "CL_label", "marker_symbol", "marker_entrezid")
-  expect_length(setdiff(required, colnames(bad)), 3L)
+  testthat::local_mocked_bindings(
+    .get_marker_data_object = function(obj_name) bad,
+    .package = "CellOnTools"
+  )
+
+  expect_error(
+    CellOnTools:::.load_marker_data("human"),
+    "missing required columns: CL_label, marker_symbol, marker_entrezid"
+  )
 })

@@ -1,8 +1,8 @@
 Package: CellOnTools
 Type: Package
 Title: Toolkit for Cell Ontology Exploration and Application to Single-Cell Analysis
-Version: 0.1.0
-Date: 2026-06-19
+Version: 0.1.1
+Date: 2026-07-14
 Authors@R: person(given = "Di",
                   family = "Wang",
                   role = c("aut", "cre"),
@@ -17,8 +17,6 @@ Description: Supports single-cell analysis workflows by standardising cell-type
     CellMarkerAccordion marker annotations from Busarello et al. (2025)
     <doi:10.1038/s41467-025-60900-4>.
 License: GPL-3
-URL: https://github.com/WANGDI0212/CellOnTools
-BugReports: https://github.com/WANGDI0212/CellOnTools/issues
 Encoding: UTF-8
 LazyData: true
 LazyDataCompression: xz
@@ -33,16 +31,19 @@ Imports:
 Suggests:
     AnnotationHub,
     clusterProfiler,
+    enrichplot,
     ggraph,
     ggplot2,
     igraph,
     knitr,
     ontologyIndex,
     ontologySimilarity,
+    pheatmap,
     rmarkdown,
     rols,
     S4Vectors,
-    testthat (>= 3.0.0)
+    Seurat,
+    testthat (>= 3.1.7)
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)

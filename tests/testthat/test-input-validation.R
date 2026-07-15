@@ -18,7 +18,7 @@ test_that(".validate_cldata rejects non-ontology objects", {
 
 test_that("CLload validates its arguments before contacting any source", {
   expect_error(CLload(prefer_local = TRUE), "requires `local_obo`")
-  expect_error(CLload(yearAdded = 2023), "non-empty character string")
+  expect_error(CLload(yearAdded = 2023), "four-digit year string")
   expect_error(CLload(release = "2026"), "YYYY-MM-DD")
   expect_error(
     CLload(yearAdded = "2023", release = "2026-06-08"),

@@ -19,6 +19,8 @@
 #'   If supplied, must be a named numeric vector covering \code{id1},
 #'   \code{id2}, and every ancestor of either term.  A complete vector returned
 #'   by \code{ontologySimilarity::descendants_IC()} satisfies this requirement.
+#'   Values must be finite and non-negative, and names must be unique and
+#'   non-empty.
 #'
 #' @return A single numeric similarity score.
 #'
@@ -108,11 +110,28 @@ CLsimilarity <- function(id1,
 
 # Validate both the shape and term coverage of a pre-computed IC vector.
 .validate_information_content <- function(information_content, required_terms) {
-  if (!is.numeric(information_content) || is.null(names(information_content))) {
+  if (!is.numeric(information_content) || !is.null(dim(information_content)) ||
+      length(information_content) == 0L || is.null(names(information_content))) {
     stop("`information_content` must be a named numeric vector.", call. = FALSE)
   }
 
-  missing_ic <- required_terms[!required_terms %in% names(information_content)]
+  ic_names <- names(information_content)
+  invalid_names <- is.na(ic_names) | !nzchar(trimws(ic_names))
+  if (any(invalid_names)) {
+    stop("`information_content` names must not be NA, empty, or whitespace-only.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(ic_names)) {
+    stop("`information_content` names must be unique.", call. = FALSE)
+  }
+  if (any(!is.finite(information_content))) {
+    stop("`information_content` values must all be finite.", call. = FALSE)
+  }
+  if (any(information_content < 0)) {
+    stop("`information_content` values must be non-negative.", call. = FALSE)
+  }
+
+  missing_ic <- required_terms[!required_terms %in% ic_names]
   if (length(missing_ic) > 0L) {
     stop(
       "`information_content` is missing IC for required term(s): ",

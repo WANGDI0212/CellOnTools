@@ -32,6 +32,12 @@ default is the fixed \code{2026-06-08} release. Its OBO version header and MD5
 checksum are verified, and all fallback URLs point to the same tagged
 release rather than to a moving latest/master branch.
 }
+\details{
+Each network attempt is limited to 60 seconds and the complete fallback
+sequence to 180 seconds by default. Adjust these limits with options
+\code{CellOnTools.download_timeout} and \code{CellOnTools.download_total_timeout}.
+Both values are in seconds.
+}
 \examples{
 \dontrun{
 # Download to current directory

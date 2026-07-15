@@ -7,6 +7,12 @@
 #' checksum are verified, and all fallback URLs point to the same tagged
 #' release rather than to a moving latest/master branch.
 #'
+#' @details
+#' Each network attempt is limited to 60 seconds and the complete fallback
+#' sequence to 180 seconds by default. Adjust these limits with options
+#' `CellOnTools.download_timeout` and `CellOnTools.download_total_timeout`.
+#' Both values are in seconds.
+#'
 #' @param dest_file Destination file path (default: \code{"cl.obo"} in the
 #'   current working directory).
 #' @param url URL to download from (default: the versioned OBO Foundry URL for
@@ -39,10 +45,12 @@ CLdownload <- function(dest_file = "cl.obo",
                        overwrite = FALSE) {
 
   # ---- Validate arguments ----
-  if (!is.character(dest_file) || length(dest_file) != 1L || !nzchar(dest_file)) {
+  if (!is.character(dest_file) || length(dest_file) != 1L ||
+      is.na(dest_file) || !nzchar(trimws(dest_file))) {
     stop("`dest_file` must be a single non-empty character string.", call. = FALSE)
   }
-  if (!is.character(url) || length(url) != 1L || !nzchar(url)) {
+  if (!is.character(url) || length(url) != 1L ||
+      is.na(url) || !nzchar(trimws(url))) {
     stop("`url` must be a single non-empty character string.", call. = FALSE)
   }
   if (!grepl("^https?://", url)) {
@@ -52,28 +60,63 @@ CLdownload <- function(dest_file = "cl.obo",
     stop("`overwrite` must be TRUE or FALSE.", call. = FALSE)
   }
 
+  # ---- Create destination directory if needed ----
+  dest_dir <- dirname(dest_file)
+  if (!dir.exists(dest_dir)) {
+    created <- dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
+    if (!isTRUE(created) && !dir.exists(dest_dir)) {
+      stop("Could not create destination directory: ", dest_dir,
+           call. = FALSE)
+    }
+    message("Created directory: ", dest_dir)
+  }
+
+  # Serialise writers for a destination. The lock is acquired before checking
+  # for an existing file so concurrent callers cannot race between the check
+  # and the final commit.
+  lock_dir <- .acquire_cl_file_lock(dest_file)
+  on.exit(.release_cl_file_lock(lock_dir), add = TRUE)
+
+  .download_cl_obo_locked(
+    dest_file = dest_file,
+    url = url,
+    overwrite = overwrite
+  )
+}
+
+.validate_cl_download_timeout <- function(value, option_name) {
+  if (!is.numeric(value) || length(value) != 1L || is.na(value) ||
+      !is.finite(value) || value < 1) {
+    stop("Option `", option_name, "` must be a finite number >= 1.",
+         call. = FALSE)
+  }
+  as.numeric(value)
+}
+
+# Download and commit an OBO file while the caller holds the destination lock.
+# Keeping this work in a private helper lets CLload() re-check a cache after it
+# acquires the lock, avoiding a second download when another process won the
+# race and populated the cache first.
+.download_cl_obo_locked <- function(dest_file, url, overwrite) {
   if (file.exists(dest_file) && !overwrite) {
     stop("File already exists: ", dest_file,
          "\nSet overwrite = TRUE to replace it.", call. = FALSE)
   }
 
-  # ---- Create destination directory if needed ----
-  dest_dir <- dirname(dest_file)
-  if (!dir.exists(dest_dir)) {
-    dir.create(dest_dir, recursive = TRUE)
-    message("Created directory: ", dest_dir)
-  }
-
-  # ---- Download ----
   message("Downloading Cell Ontology OBO file...")
   message("  From: ", url)
   message("  To:   ", dest_file)
 
+  per_attempt_timeout <- .validate_cl_download_timeout(
+    getOption("CellOnTools.download_timeout", 60),
+    "CellOnTools.download_timeout"
+  )
+  total_timeout <- .validate_cl_download_timeout(
+    getOption("CellOnTools.download_total_timeout", 180),
+    "CellOnTools.download_total_timeout"
+  )
   old_timeout <- getOption("timeout")
-  if (is.numeric(old_timeout) && length(old_timeout) == 1L && old_timeout < 300) {
-    options(timeout = 300)
-    on.exit(options(timeout = old_timeout), add = TRUE)
-  }
+  on.exit(options(timeout = old_timeout), add = TRUE)
 
   download_urls <- url
   expected_release <- NULL
@@ -85,11 +128,16 @@ CLdownload <- function(dest_file = "cl.obo",
     expected_md5 <- .cl_release_md5(url_release)
   }
 
-  method_candidates <- getOption("download.file.method", "auto")
-  if (is.null(method_candidates) || !nzchar(method_candidates)) {
-    method_candidates <- "auto"
+  configured_method <- getOption("download.file.method", "auto")
+  if (!is.character(configured_method) || length(configured_method) != 1L ||
+      is.na(configured_method) || !nzchar(configured_method)) {
+    configured_method <- "auto"
   }
-  if (isTRUE(capabilities("libcurl"))) {
+  method_candidates <- configured_method
+  # On current R builds, auto already selects libcurl. Retrying explicit
+  # libcurl would repeat the same failure and multiply the wait time.
+  if (!identical(configured_method, "auto") &&
+      isTRUE(capabilities("libcurl"))) {
     method_candidates <- c(method_candidates, "libcurl")
   }
   if (nzchar(Sys.which("curl"))) {
@@ -97,28 +145,44 @@ CLdownload <- function(dest_file = "cl.obo",
   }
   method_candidates <- unique(method_candidates)
 
+  dest_dir <- dirname(dest_file)
   tmp_file <- tempfile(pattern = paste0(basename(dest_file), "."),
                        tmpdir = dest_dir, fileext = ".download")
   on.exit(unlink(tmp_file), add = TRUE)
 
   errors <- character()
-  status <- 1L
   downloaded_url <- NA_character_
   downloaded_method <- NA_character_
+  total_started <- Sys.time()
+  total_timed_out <- FALSE
 
   for (attempt_url in download_urls) {
     for (method in method_candidates) {
+      elapsed <- as.numeric(difftime(
+        Sys.time(), total_started, units = "secs"
+      ))
+      remaining <- total_timeout - elapsed
+      if (!is.finite(remaining) || remaining < 1) {
+        total_timed_out <- TRUE
+        break
+      }
+
+      attempt_timeout <- max(1, min(per_attempt_timeout, remaining))
+      options(timeout = as.integer(ceiling(attempt_timeout)))
       if (file.exists(tmp_file)) unlink(tmp_file)
 
       extra <- NULL
       if (identical(method, "curl")) {
-        extra <- "-L"
+        extra <- paste("-L --max-time", as.integer(ceiling(attempt_timeout)))
         if (.Platform$OS.type == "windows") {
           extra <- paste(extra, "--ssl-no-revoke")
         }
       }
 
-      message("  Trying: ", attempt_url, " [method = ", method, "]")
+      message(
+        "  Trying: ", attempt_url, " [method = ", method,
+        ", timeout = ", as.integer(ceiling(attempt_timeout)), "s]"
+      )
       args <- list(url = attempt_url, destfile = tmp_file, method = method,
                    quiet = FALSE, mode = "wb")
       if (!is.null(extra)) {
@@ -172,10 +236,16 @@ CLdownload <- function(dest_file = "cl.obo",
       break
     }
 
-    if (!is.na(downloaded_url)) break
+    if (!is.na(downloaded_url) || total_timed_out) break
   }
 
   if (is.na(downloaded_url)) {
+    if (total_timed_out) {
+      errors <- c(
+        errors,
+        paste0("total download time budget of ", total_timeout, " seconds exceeded")
+      )
+    }
     stop("Download failed after trying available methods.\n",
          paste0("  - ", unique(errors), collapse = "\n"),
          "\nTip: if this is an SSL issue on Windows, try downloading the file ",
@@ -187,12 +257,7 @@ CLdownload <- function(dest_file = "cl.obo",
   # replace the destination, so an invalid response cannot destroy an existing
   # file even when overwrite = TRUE.
   file_size <- file.size(tmp_file)
-
-  copied <- file.copy(tmp_file, dest_file, overwrite = TRUE)
-  if (!isTRUE(copied)) {
-    stop("Downloaded file could not be written to destination: ", dest_file,
-         call. = FALSE)
-  }
+  .commit_cl_download(tmp_file, dest_file, overwrite = overwrite)
 
   message("Successfully downloaded Cell Ontology OBO file")
   message("  Source:   ", downloaded_url)
@@ -201,6 +266,110 @@ CLdownload <- function(dest_file = "cl.obo",
   message("  Location: ", normalizePath(dest_file))
 
   invisible(normalizePath(dest_file))
+}
+
+# Acquire a cross-process lock represented by an atomically created directory.
+# Stale locks are removed so a terminated R session cannot block the cache
+# indefinitely. This deliberately uses base R to avoid a mandatory dependency
+# for the default ontology-loading path.
+.acquire_cl_file_lock <- function(dest_file,
+                                  timeout = 300,
+                                  poll = 0.1,
+                                  stale_after = 3600) {
+  lock_dir <- paste0(dest_file, ".lock")
+  started <- Sys.time()
+
+  repeat {
+    if (isTRUE(dir.create(lock_dir, showWarnings = FALSE))) {
+      owner <- c(
+        paste0("pid=", Sys.getpid()),
+        paste0("created=", format(Sys.time(), tz = "UTC", usetz = TRUE))
+      )
+      try(writeLines(owner, file.path(lock_dir, "owner")), silent = TRUE)
+      return(lock_dir)
+    }
+
+    info <- suppressWarnings(file.info(lock_dir))
+    lock_age <- if (nrow(info) == 1L && !is.na(info$mtime)) {
+      as.numeric(difftime(Sys.time(), info$mtime, units = "secs"))
+    } else {
+      NA_real_
+    }
+    if (is.finite(lock_age) && lock_age > stale_after) {
+      unlink(lock_dir, recursive = TRUE, force = TRUE)
+      next
+    }
+
+    waited <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+    if (waited >= timeout) {
+      stop(
+        "Timed out waiting for another process to finish writing: ",
+        dest_file,
+        call. = FALSE
+      )
+    }
+    Sys.sleep(poll)
+  }
+}
+
+.release_cl_file_lock <- function(lock_dir) {
+  if (is.character(lock_dir) && length(lock_dir) == 1L &&
+      !is.na(lock_dir) && dir.exists(lock_dir)) {
+    unlink(lock_dir, recursive = TRUE, force = TRUE)
+  }
+  invisible(NULL)
+}
+
+# Install a validated download using same-directory renames. When replacing an
+# existing file, keep a temporary backup until the new file is in place so a
+# failed commit can restore the previous cache.
+.commit_cl_download <- function(tmp_file, dest_file, overwrite = FALSE) {
+  if (!file.exists(tmp_file)) {
+    stop("Validated temporary download is missing: ", tmp_file, call. = FALSE)
+  }
+
+  if (!file.exists(dest_file)) {
+    if (!isTRUE(file.rename(tmp_file, dest_file))) {
+      stop("Downloaded file could not be committed to destination: ",
+           dest_file, call. = FALSE)
+    }
+    return(invisible(dest_file))
+  }
+
+  if (!overwrite) {
+    stop("File already exists: ", dest_file, call. = FALSE)
+  }
+
+  backup <- tempfile(
+    pattern = paste0(".", basename(dest_file), ".backup-"),
+    tmpdir = dirname(dest_file)
+  )
+  if (!isTRUE(file.rename(dest_file, backup))) {
+    stop("Existing destination could not be moved aside safely: ", dest_file,
+         call. = FALSE)
+  }
+
+  committed <- FALSE
+  on.exit({
+    if (!committed && file.exists(backup) && !file.exists(dest_file)) {
+      file.rename(backup, dest_file)
+    }
+  }, add = TRUE)
+
+  if (!isTRUE(file.rename(tmp_file, dest_file))) {
+    restored <- isTRUE(file.rename(backup, dest_file))
+    stop(
+      "Downloaded file could not be committed to destination: ", dest_file,
+      if (!restored) paste0(". Previous file remains at ", backup) else "",
+      call. = FALSE
+    )
+  }
+
+  committed <- TRUE
+  if (file.exists(backup) && unlink(backup, force = TRUE) != 0L) {
+    warning("Could not remove download backup file: ", backup, call. = FALSE)
+  }
+  invisible(dest_file)
 }
 
 .validate_cl_obo_file <- function(path,

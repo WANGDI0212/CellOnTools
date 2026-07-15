@@ -90,132 +90,6 @@ CLmapInteractive <- function(query,
                              show_details   = FALSE,
                              items_per_page = 10L) {
 
-  # ========================================================================
-  # Private helpers
-  # ========================================================================
-
-  .canonical_query <- function(q) {
-    q <- gsub("[_/\\-]+", " ", q)
-    q <- gsub("\\bcells\\b", "cell", q, ignore.case = TRUE)
-    q <- gsub("\\s+", " ", q)
-    trimws(q)
-  }
-
-  .normalize_query <- function(q) {
-    tolower(.canonical_query(q))
-  }
-
-  .restore_common_cell_case <- function(q) {
-    q <- gsub("\\bnkt\\b", "NKT", q, ignore.case = TRUE)
-    q <- gsub("\\bnk\\b",  "NK",  q, ignore.case = TRUE)
-    q <- gsub("\\bcd([0-9]+)\\b", "CD\\1", q, ignore.case = TRUE)
-    q <- gsub("\\bt cell\\b", "T cell", q, ignore.case = TRUE)
-    q <- gsub("\\bb cell\\b", "B cell", q, ignore.case = TRUE)
-    q
-  }
-
-  .search_terms <- function(q_display) {
-    unique(c(
-      trimws(q_display),
-      .canonical_query(q_display),
-      .restore_common_cell_case(.canonical_query(q_display))
-    ))
-  }
-
-  # Local reranking (same logic as CLmap)
-  .rerank <- function(df_cl, query_actual) {
-    if (nrow(df_cl) <= 1L) return(df_cl)
-    lbl_lower <- tolower(df_cl$cl_label)
-    q_lower   <- tolower(query_actual)
-    score <- ifelse(lbl_lower == q_lower,                          1L,
-             ifelse(.normalize_query(lbl_lower) == q_lower,        2L,
-             ifelse(startsWith(lbl_lower, q_lower),                3L,
-             ifelse(grepl(q_lower, lbl_lower, fixed = TRUE),       4L,
-                                                                   5L))))
-    df_cl[order(score, seq_len(nrow(df_cl))), , drop = FALSE]
-  }
-
-  .empty_candidates <- function() {
-    data.frame(query_display = character(0), query_actual = character(0),
-               cl_label = character(0), cl_id = character(0),
-               rank = integer(0), stringsAsFactors = FALSE)
-  }
-
-  .search_candidates <- function(query_display, max_results) {
-    if (is.na(query_display) || !nzchar(trimws(query_display))) {
-      return(list(query_display = query_display, query_actual = NA_character_,
-                  status = "invalid_query", error_message = NA_character_,
-                  candidates = .empty_candidates()))
-    }
-    query_actual <- .normalize_query(query_display)
-    rows <- max(20L, max_results)
-    terms <- .search_terms(query_display)
-    errors <- character(0)
-    dfs <- list()
-
-    for (term in terms) {
-      df <- tryCatch({
-        obj <- rols::OlsSearch(q = term, ontology = "cl", type = "class",
-                               groupField = TRUE, obsoletes = FALSE,
-                               rows = rows)
-        df  <- as(rols::olsSearch(obj), "data.frame")
-
-        if (!all(c("label", "obo_id") %in% colnames(df))) {
-          stop("OLS result missing required columns.")
-        }
-
-        df[grep("^CL:\\d+$", df$obo_id),
-           c("label", "obo_id"), drop = FALSE]
-      }, error = function(e) {
-        errors <<- c(errors, paste0(term, ": ", conditionMessage(e)))
-        NULL
-      })
-
-      if (!is.null(df) && nrow(df) > 0L) {
-        dfs[[length(dfs) + 1L]] <- df
-      }
-    }
-
-    if (length(dfs) == 0L) {
-      if (length(errors) > 0L) {
-        return(list(query_display = query_display, query_actual = query_actual,
-                    status = "api_error",
-                    error_message = paste(unique(errors), collapse = " | "),
-                    candidates = .empty_candidates()))
-      }
-      return(list(query_display = query_display, query_actual = query_actual,
-                  status = "no_match", error_message = NA_character_,
-                  candidates = .empty_candidates()))
-    }
-
-    df_cl <- do.call(rbind, dfs)
-    df_cl <- df_cl[!duplicated(df_cl[, c("label", "obo_id")]), , drop = FALSE]
-    colnames(df_cl) <- c("cl_label", "cl_id")
-
-    if (nrow(df_cl) == 0L) {
-      return(list(query_display = query_display, query_actual = query_actual,
-                  status = "no_match", error_message = NA_character_,
-                  candidates = .empty_candidates()))
-    }
-
-    df_cl <- .rerank(df_cl, query_actual)
-    n_take <- min(nrow(df_cl), max_results)
-    df_cl  <- df_cl[seq_len(n_take), , drop = FALSE]
-
-    candidates <- data.frame(
-      query_display = rep(query_display, nrow(df_cl)),
-      query_actual  = rep(query_actual,  nrow(df_cl)),
-      cl_label      = df_cl$cl_label,
-      cl_id         = df_cl$cl_id,
-      rank          = seq_len(nrow(df_cl)),
-      stringsAsFactors = FALSE
-    )
-
-    list(query_display = query_display, query_actual = query_actual,
-         status = "matched", error_message = NA_character_,
-         candidates = candidates)
-  }
-
   .display_candidates <- function(q_orig, q_display, q_actual, candidates,
                                   qi, n_total, show_details,
                                   cur_page, tot_pages, start_row, end_row, tot_rows) {
@@ -253,57 +127,6 @@ CLmapInteractive <- function(query,
       cat("Status: no match found in Cell Ontology.\n\n")
     } else {
       cat("Status: no result.\n\n")
-    }
-  }
-
-  .get_selection <- function(n_opts, cur_page, tot_pages) {
-    parts <- c(sprintf("Select [1\u2013%d]", n_opts), "Enter=accept top",
-               "0/n=skip this", "a=accept all remaining", "s=skip this")
-    if (tot_pages > 1L) {
-      if (cur_page > 1L)      parts <- c(parts, "p=prev page")
-      if (cur_page < tot_pages) parts <- c(parts, "c=next page")
-    }
-    parts <- c(parts, "r=new search", "i=info", "q=quit", "h=help")
-    prompt <- paste0(paste(parts, collapse = ", "), ": ")
-
-    repeat {
-      inp <- trimws(tolower(readline(prompt = prompt)))
-      if (inp == "")                          return(list(action = "select",           choice = 1L))
-      if (inp %in% c("h", "?"))              return(list(action = "help",             choice = NA_integer_))
-      if (inp == "q")                         return(list(action = "quit",             choice = NA_integer_))
-      if (inp == "a")                         return(list(action = "accept_remaining", choice = NA_integer_))
-      if (inp == "s")                         return(list(action = "skip",             choice = NA_integer_))
-      if (inp %in% c("0", "n"))              return(list(action = "skip",             choice = NA_integer_))
-      if (inp == "i")                         return(list(action = "info",             choice = NA_integer_))
-      if (inp == "p" && cur_page > 1L)       return(list(action = "prev_page",        choice = NA_integer_))
-      if (inp == "c" && cur_page < tot_pages) return(list(action = "next_page",        choice = NA_integer_))
-      if (inp == "p" || inp == "c") { cat("Already at boundary.\n"); next }
-      if (inp == "r") {
-        nq <- trimws(readline(prompt = "Enter new search term: "))
-        if (nzchar(nq)) return(list(action = "new_search", choice = nq))
-        cat("Search term cannot be empty.\n"); next
-      }
-      ch <- suppressWarnings(as.integer(inp))
-      if (is.na(ch)) { cat("Invalid input. Type 'h' for help.\n"); next }
-      if (ch < 1L || ch > n_opts) { cat(sprintf("Enter a number between 1 and %d.\n", n_opts)); next }
-      return(list(action = "select", choice = ch))
-    }
-  }
-
-  .get_selection_no_candidates <- function() {
-    prompt <- "0/n=continue, a=accept all remaining, r=new search, q=quit, h=help: "
-    repeat {
-      inp <- trimws(tolower(readline(prompt = prompt)))
-      if (inp %in% c("", "0", "n")) return(list(action = "skip",             choice = NA_integer_))
-      if (inp %in% c("h", "?"))     return(list(action = "help",             choice = NA_integer_))
-      if (inp == "q")                return(list(action = "quit",             choice = NA_integer_))
-      if (inp == "a")                return(list(action = "accept_remaining", choice = NA_integer_))
-      if (inp == "r") {
-        nq <- trimws(readline(prompt = "Enter new search term: "))
-        if (nzchar(nq)) return(list(action = "new_search", choice = nq))
-        cat("Search term cannot be empty.\n"); next
-      }
-      cat("Invalid input. Type 'h' for help.\n")
     }
   }
 
@@ -346,15 +169,6 @@ CLmapInteractive <- function(query,
     readline()
   }
 
-  .make_record <- function(q_display, q_actual, cl_label = NA_character_,
-                           cl_id = NA_character_, selection_mode, match_status,
-                           error_message = NA_character_) {
-    list(query_display = q_display, query_actual = q_actual,
-         cl_label = cl_label, cl_id = cl_id,
-         selection_mode = selection_mode, match_status = match_status,
-         error_message = error_message)
-  }
-
   # ========================================================================
   # Argument validation
   # ========================================================================
@@ -364,45 +178,44 @@ CLmapInteractive <- function(query,
   if (missing(query) || is.null(query) || length(query) == 0L) {
     stop("`query` must be a non-empty character vector.", call. = FALSE)
   }
-  query_original_all <- as.character(query)
+  prepared <- .map_prepare_queries(query)
+  query_original_all <- prepared$original
   n_input <- length(query_original_all)
 
-  if (!is.numeric(n_candidates) || length(n_candidates) != 1L ||
-      is.na(n_candidates) || n_candidates < 1L) {
-    stop("`n_candidates` must be a positive integer.", call. = FALSE)
-  }
-  n_candidates <- as.integer(n_candidates)
+  n_candidates <- .validate_integer_scalar(
+    n_candidates,
+    "n_candidates",
+    minimum = 1L
+  )
+  items_per_page <- .validate_integer_scalar(
+    items_per_page,
+    "items_per_page",
+    minimum = 1L
+  )
+  auto_accept <- .validate_logical_scalar(auto_accept, "auto_accept")
+  show_details <- .validate_logical_scalar(show_details, "show_details")
 
-  if (!is.numeric(items_per_page) || length(items_per_page) != 1L ||
-      is.na(items_per_page) || items_per_page < 1L) {
-    stop("`items_per_page` must be a positive integer.", call. = FALSE)
-  }
-  items_per_page <- as.integer(items_per_page)
+  valid_idx <- prepared$valid
+  n_valid <- sum(valid_idx)
 
-  if (!is.logical(auto_accept) || is.na(auto_accept)) {
-    stop("`auto_accept` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (!auto_accept && !interactive()) {
+  if (n_valid > 0L && !auto_accept && !.map_is_interactive()) {
     warning("Non-interactive session detected. Enabling auto_accept.", call. = FALSE)
     auto_accept <- TRUE
   }
-  if (!requireNamespace("rols", quietly = TRUE)) {
-    stop("Package 'rols' is required. Install with: BiocManager::install('rols')",
-         call. = FALSE)
+  if (n_valid > 0L && !requireNamespace("rols", quietly = TRUE)) {
+    stop(
+      "Package 'rols' is required. Install with: BiocManager::install('rols')",
+      call. = FALSE
+    )
   }
 
   # ========================================================================
   # Normalise and deduplicate
   # ========================================================================
 
-  valid_idx <- !is.na(query_original_all) & nzchar(trimws(query_original_all))
-  n_valid   <- sum(valid_idx)
-  if (n_valid == 0L) stop("No valid queries to process.", call. = FALSE)
+  if (n_valid > 0L) .assert_ols_cl_release()
 
-  .assert_ols_cl_release()
-
-  query_norm_all <- rep(NA_character_, n_input)
-  query_norm_all[valid_idx] <- .normalize_query(query_original_all[valid_idx])
+  query_norm_all <- prepared$normalized
 
   query_norm_unique <- unique(query_norm_all[valid_idx])
   n_unique <- length(query_norm_unique)
@@ -426,8 +239,11 @@ CLmapInteractive <- function(query,
   # ========================================================================
 
   search_cache <- stats::setNames(vector("list", n_unique), query_norm_unique)
-  for (q_norm in query_norm_unique) {
-    search_cache[[q_norm]] <- .search_candidates(rep_original[[q_norm]], n_candidates)
+  for (i in seq_along(query_norm_unique)) {
+    search_cache[[i]] <- .map_search_candidates(
+      unname(rep_original[i]),
+      n_candidates
+    )
   }
 
   # ========================================================================
@@ -449,17 +265,7 @@ CLmapInteractive <- function(query,
 
       # Auto-accept path
       if (auto_accept || accept_remaining) {
-        user_selections[[q_norm]] <- if (has_cands) {
-          .make_record(cur_info$query_display, cur_info$query_actual,
-                       cur_info$candidates$cl_label[1L],
-                       cur_info$candidates$cl_id[1L],
-                       "auto_default", "matched")
-        } else {
-          .make_record(cur_info$query_display, cur_info$query_actual,
-                       selection_mode = cur_info$status,
-                       match_status   = cur_info$status,
-                       error_message  = cur_info$error_message)
-        }
+        user_selections[[q_norm]] <- .map_default_selection(cur_info)
         break
       }
 
@@ -474,11 +280,15 @@ CLmapInteractive <- function(query,
         .display_candidates(q_orig, cur_info$query_display, cur_info$query_actual,
                             cur_info$candidates, qi, n_unique, show_details,
                             cur_page, tot_pages, start_row, end_row, tot_rows)
-        sel <- .get_selection(end_row - start_row + 1L, cur_page, tot_pages)
+        sel <- .read_map_selection(
+          end_row - start_row + 1L,
+          cur_page,
+          tot_pages
+        )
       } else {
         .display_no_candidates(q_orig, cur_info$query_display, cur_info$query_actual,
                                cur_info$status, cur_info$error_message, qi, n_unique)
-        sel <- .get_selection_no_candidates()
+        sel <- .read_map_selection_no_candidates()
       }
 
       # Handle selection
@@ -489,7 +299,7 @@ CLmapInteractive <- function(query,
 
       if (sel$action == "new_search") {
         message("\nSearching for: \"", sel$choice, "\"...")
-        cur_info <- .search_candidates(sel$choice, n_candidates)
+        cur_info <- .map_search_candidates(sel$choice, n_candidates)
         cur_page <- 1L
         if (identical(cur_info$status, "matched"))
           message("Found ", nrow(cur_info$candidates), " match(es).\n")
@@ -508,43 +318,30 @@ CLmapInteractive <- function(query,
 
       if (sel$action == "accept_remaining") {
         accept_remaining <- TRUE
-        # Record current query with top candidate (or no-match)
-        user_selections[[q_norm]] <- if (has_cands) {
-          .make_record(cur_info$query_display, cur_info$query_actual,
-                       cur_info$candidates$cl_label[1L],
-                       cur_info$candidates$cl_id[1L],
-                       "auto_default", "matched")
-        } else {
-          .make_record(cur_info$query_display, cur_info$query_actual,
-                       selection_mode = cur_info$status,
-                       match_status   = cur_info$status,
-                       error_message  = cur_info$error_message)
-        }
+        user_selections[[q_norm]] <- .map_default_selection(cur_info)
         message("\n[Auto-accepting defaults for remaining matched queries...]")
         break
       }
 
       if (sel$action == "skip") {
-        user_selections[[q_norm]] <- .make_record(
-          cur_info$query_display, cur_info$query_actual,
-          selection_mode = "skip",
-          match_status   = if (has_cands) "matched" else cur_info$status,
-          error_message  = cur_info$error_message
-        )
+        user_selections[[q_norm]] <- .map_make_selection(cur_info, "skip")
         break
       }
 
-      if (sel$action == "select") {
+      if (sel$action %in% c("select", "accept_top")) {
         if (!has_cands) { cat("No candidates to select.\n"); next }
-        abs_row <- start_row - 1L + sel$choice
+        abs_row <- if (identical(sel$action, "accept_top")) {
+          1L
+        } else {
+          start_row - 1L + sel$choice
+        }
         if (abs_row < 1L || abs_row > nrow(cur_info$candidates)) {
           cat("Selection out of bounds.\n"); next
         }
-        user_selections[[q_norm]] <- .make_record(
-          cur_info$query_display, cur_info$query_actual,
-          cur_info$candidates$cl_label[abs_row],
-          cur_info$candidates$cl_id[abs_row],
-          "manual", "matched"
+        user_selections[[q_norm]] <- .map_make_selection(
+          cur_info,
+          "manual",
+          abs_row
         )
         break
       }
@@ -565,22 +362,11 @@ CLmapInteractive <- function(query,
     q_norm    <- query_norm_unique[idx]
     base_info <- search_cache[[q_norm]]
 
-    if (accept_remaining && !quit_early &&
-        identical(base_info$status, "matched") &&
-        nrow(base_info$candidates) > 0L) {
-      user_selections[[q_norm]] <- .make_record(
-        base_info$query_display, base_info$query_actual,
-        base_info$candidates$cl_label[1L], base_info$candidates$cl_id[1L],
-        "auto_default", "matched"
-      )
-    } else {
-      user_selections[[q_norm]] <- .make_record(
-        base_info$query_display, base_info$query_actual,
-        selection_mode = "quit_unreviewed",
-        match_status   = base_info$status,
-        error_message  = base_info$error_message
-      )
-    }
+    user_selections[[q_norm]] <- .map_unresolved_selection(
+      base_info,
+      accept_remaining,
+      quit_early
+    )
   }
 
   # ========================================================================
@@ -627,9 +413,12 @@ CLmapInteractive <- function(query,
   # Summary
   # ========================================================================
 
-  u_sel <- do.call(rbind, lapply(user_selections, function(x)
-    data.frame(selection_mode = x$selection_mode, stringsAsFactors = FALSE)))
-  count_mode <- function(m) sum(u_sel$selection_mode == m)
+  selection_modes <- vapply(
+    user_selections,
+    function(selection) selection$selection_mode,
+    character(1L)
+  )
+  count_mode <- function(mode) sum(selection_modes == mode)
   n_selected <- sum(!is.na(df$cl_id))
 
   message("\n", strrep("=", 72))

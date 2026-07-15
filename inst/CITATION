@@ -11,11 +11,9 @@ bibentry(
   author   = person(given = "Di", family = "Wang"),
   year     = year,
   note     = vers,
-  url      = "https://github.com/WANGDI0212/CellOnTools",
   textVersion = paste0(
     "Di Wang (", year, "). CellOnTools: Tools for Cell Ontology Mapping, ",
-    "Hierarchy, Similarity, and Marker Enrichment. ", vers,
-    ". https://github.com/WANGDI0212/CellOnTools"
+    "Hierarchy, Similarity, and Marker Enrichment. ", vers, "."
   )
 )
 

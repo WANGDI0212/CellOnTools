@@ -1,3 +1,34 @@
+# CellOnTools 0.1.1
+
+## Correctness
+
+* Readable enrichment results now maintain complete S4 object invariants rather
+  than changing only the displayed gene strings.
+* Custom information-content vectors reject missing, non-finite, negative,
+  unnamed, or duplicate values before semantic-similarity calculations.
+* Mapping rejects queries that become empty after normalisation, and strict
+  integer validation is shared across mapping entry points.
+* Interactive mapping keeps global-rank acceptance distinct from page-relative
+  selection and preserves `no_match` / `api_error` states when accepting the
+  remaining queries.
+* AnnotationHub years require an exact four-digit value; cluster names reject
+  missing, blank, and duplicate values.
+
+## Reliability and maintainability
+
+* Ontology downloads use a per-destination cross-process lock and promote a
+  validated same-directory temporary file through a recoverable rename.
+  Network attempts now have configurable per-attempt and total time budgets,
+  and waiting processes re-check a populated cache instead of downloading the
+  same release again.
+* Query normalisation, mapping, validation, and interactive state handling are
+  split into smaller internal helpers with regression tests.
+* OLS requests and terminal input use testable internal boundaries; interactive
+  candidate numbers must now be whole-number text rather than silently
+  truncating values such as `1.5`.
+* Optional packages used by examples and workflows are declared under
+  `Suggests`, and the required testthat version is now accurate.
+
 # CellOnTools 0.1.0
 
 Initial release.

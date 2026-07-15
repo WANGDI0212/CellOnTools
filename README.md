@@ -1,7 +1,6 @@
 # CellOnTools
 
 <!-- badges: start -->
-[![R-CMD-check](https://github.com/WANGDI0212/CellOnTools/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/WANGDI0212/CellOnTools/actions/workflows/R-CMD-check.yaml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
@@ -36,17 +35,17 @@ checks, and cross-dataset comparisons.
 
 ## Installation
 
-Install the development version from GitHub:
+Build and install from a source checkout:
 
-```r
-# install.packages("remotes")
-remotes::install_github("WANGDI0212/CellOnTools")
+```sh
+R CMD build CellOnTools
+R CMD INSTALL CellOnTools_0.1.1.tar.gz
 ```
 
-For local development from a source checkout:
+Alternatively, install an existing source tarball from R:
 
-```powershell
-& "C:\Program Files\R\R-4.4.2\bin\R.exe" CMD INSTALL CellOnTools
+```r
+install.packages("CellOnTools_0.1.1.tar.gz", repos = NULL, type = "source")
 ```
 
 CellOnTools keeps several heavier packages in `Suggests` so that the base
@@ -59,17 +58,19 @@ install stays lightweight. Install only the pieces needed for your workflow:
 | Semantic similarity | `ontologySimilarity` |
 | Hierarchy plots | `ggraph`, `ggplot2`, `igraph` |
 | OLS name mapping | `rols` |
-| Marker enrichment | `clusterProfiler` |
+| Marker enrichment and plots | `clusterProfiler`, `enrichplot` |
+| Similarity heatmaps | `pheatmap` |
+| PBMC workflow template | `Seurat` |
 
 To install the full workflow stack:
 
 ```r
-install.packages(c("ontologyIndex", "ontologySimilarity",
-                   "ggraph", "ggplot2", "igraph"))
+install.packages(c("ontologyIndex", "ontologySimilarity", "pheatmap",
+                   "ggraph", "ggplot2", "igraph", "Seurat"))
 
 # install.packages("BiocManager")
-BiocManager::install(c("AnnotationHub", "S4Vectors",
-                       "clusterProfiler", "rols"))
+BiocManager::install(c("AnnotationHub", "S4Vectors", "clusterProfiler",
+                       "enrichplot", "rols"))
 ```
 
 ## Quick Start
@@ -126,6 +127,17 @@ CLdepth(c("CL:0000084", "CL:0000236"), clData)
 CLcommonAncestor(c("CL:0000084", "CL:0000236"), clData, most_specific = TRUE)
 ```
 
+Download attempts are bounded to avoid very long waits when ontology servers
+are unreachable. The defaults are 60 seconds per attempt and 180 seconds for
+the complete fallback sequence; slower networks can raise them explicitly:
+
+```r
+options(
+  CellOnTools.download_timeout = 90,
+  CellOnTools.download_total_timeout = 300
+)
+```
+
 ## Single-Cell Annotation Pattern
 
 A common workflow is to keep the original cluster labels, add reviewed CL IDs,
@@ -161,14 +173,14 @@ cells, and rolled the 9 reviewed annotations into 3 broader groups:
 
 | Seurat label | CL ID | CL label | Roll-up label |
 |---|---|---|---|
-| Naive CD4 T | `CL:0000895` | naive thymus-derived CD4-positive, alpha-beta T cell | lymphocyte |
-| Memory CD4 T | `CL:0000897` | CD4-positive, alpha-beta memory T cell | lymphocyte |
-| CD14+ Mono | `CL:0001054` | CD14-positive monocyte | mononuclear phagocyte |
-| B | `CL:0000236` | B cell | lymphocyte |
-| CD8 T | `CL:0000625` | CD8-positive, alpha-beta T cell | lymphocyte |
-| FCGR3A+ Mono | `CL:0002396` | CD14-low, CD16-positive monocyte | mononuclear phagocyte |
-| NK | `CL:0000623` | natural killer cell | lymphocyte |
-| DC | `CL:0000451` | dendritic cell | mononuclear phagocyte |
+| Naive CD4 T | `CL:0000895` | naive thymus-derived CD4-positive, alpha-beta T cell | mature alpha-beta T cell |
+| Memory CD4 T | `CL:0000897` | CD4-positive, alpha-beta memory T cell | mature alpha-beta T cell |
+| CD14+ Mono | `CL:0001054` | CD14-positive monocyte | mononuclear cell |
+| B | `CL:0000236` | B cell | mononuclear cell |
+| CD8 T | `CL:0000625` | CD8-positive, alpha-beta T cell | mature alpha-beta T cell |
+| FCGR3A+ Mono | `CL:0002396` | CD14-low, CD16-positive monocyte | mononuclear cell |
+| NK | `CL:0000623` | natural killer cell | mononuclear cell |
+| DC | `CL:0000451` | dendritic cell | mononuclear cell |
 | Platelet | `CL:0000233` | platelet | platelet |
 
 ## Marker Enrichment As Evidence

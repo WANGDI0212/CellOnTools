@@ -1,14 +1,25 @@
 ## Test environments
 
 * Local: Windows 10, R 4.4.2
-* GitHub Actions: macOS, Windows, Ubuntu (R-release, R-devel, R-oldrel)
+* Compatibility test suite: Windows 10, R 4.2.3
+* The configured GitHub Actions matrix covers macOS/Windows/Ubuntu,
+  R-devel/release/oldrel, and the declared minimum R 4.1.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes
+0 errors | 0 warnings | 2 notes
 
-(A transient "unable to verify current time" NOTE may appear when the check
-machine has no network access to a time server; it is unrelated to the package.)
+* `New submission`
+* `unable to verify current time`
+
+The second NOTE is environmental: the check machine could not contact a time
+server. Installed-package tests completed with 382 passes, no failures, no
+warnings, and no skips under R 4.4.2.
+
+The incoming-feasibility check also reported connection resets/timeouts for
+three GitHub URLs belonging to the cited CellMarkerAccordion data source. All
+three URLs were independently confirmed reachable on 2026-07-14 and are kept
+for data provenance.
 
 ## Notes for reviewers
 
