@@ -1,5 +1,10 @@
 # CellOnTools 0.1.1
 
+## Compatibility
+
+* The minimum supported R version is now 4.4.0. CI tests R 4.4 explicitly
+  with the full dependency set used by the other supported R versions.
+
 ## Correctness
 
 * Readable enrichment results now maintain complete S4 object invariants rather

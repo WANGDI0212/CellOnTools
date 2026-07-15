@@ -25,8 +25,8 @@ jobs:
           - {os: ubuntu-latest,  r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-latest,  r: 'release'}
           - {os: ubuntu-latest,  r: 'oldrel-1'}
-          # DESCRIPTION promises R >= 4.1.0; keep that compatibility explicit.
-          - {os: ubuntu-latest,  r: '4.1'}
+          # DESCRIPTION promises R >= 4.4.0; keep that compatibility explicit.
+          - {os: ubuntu-latest,  r: '4.4'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -46,24 +46,9 @@ jobs:
       - uses: r-lib/actions/setup-tinytex@v2
         if: matrix.config.os == 'ubuntu-latest' && matrix.config.r == 'release'
 
-      - name: Install full dependencies
-        if: matrix.config.r != '4.1'
-        uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: any::rcmdcheck
-          needs: check
-
-      # Current releases of several optional analysis packages no longer
-      # support R 4.1. Test the package's declared minimum R version with its
-      # hard dependencies and the lightweight tools needed to build and test.
-      - name: Install minimum-version dependencies
-        if: matrix.config.r == '4.1'
-        uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          dependencies: '"hard"'
-          extra-packages: >-
-            any::rcmdcheck, any::testthat, any::knitr, any::rmarkdown,
-            any::ontologyIndex
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2

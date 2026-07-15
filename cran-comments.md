@@ -1,9 +1,9 @@
 ## Test environments
 
 * Local: Windows 10, R 4.4.2
-* Compatibility test suite: Windows 10, R 4.2.3
+* Minimum-version CI: Ubuntu, R 4.4
 * The configured GitHub Actions matrix covers macOS/Windows/Ubuntu,
-  R-devel/release/oldrel, and the declared minimum R 4.1.
+  R-devel/release/oldrel, and the declared minimum R 4.4.
 
 ## R CMD check results
 
