@@ -166,34 +166,45 @@ pbmc_terms$cl_label <- CLid2label(pbmc_terms$cl_id, clData)
 pbmc_terms$cl_depth <- CLdepth(pbmc_terms$cl_id, clData)
 ```
 
-From the pbmc3k case study used to guide the package documentation, all 9
-Seurat annotation labels were resolved to CL IDs. The same analysis loaded
-19,154 ontology IDs (including 3,534 CL IDs), exported CL metadata for 2,638
-cells, and rolled the 9 reviewed annotations into 3 broader groups:
+The pbmc3k case study uses the 2,700-cell raw SeuratData object only to show the
+standard tutorial QC thresholds, and uses the published 2,638-cell
+`pbmc3k.final` object for annotation analyses. It is therefore an annotation
+standardisation and concordance case study, not an end-to-end benchmark of
+normalisation, clustering, or automated cell typing. All 9 Seurat labels were
+resolved to reviewed CL IDs. After inspecting the parameter sweep, the locked
+case-study setting (`min_group_size = 3`,
+`max_candidate_ancestor_count = 8`) rolled those 9 terms into 3 biologically
+interpretable groups:
 
 | Seurat label | CL ID | CL label | Roll-up label |
 |---|---|---|---|
-| Naive CD4 T | `CL:0000895` | naive thymus-derived CD4-positive, alpha-beta T cell | mature alpha-beta T cell |
-| Memory CD4 T | `CL:0000897` | CD4-positive, alpha-beta memory T cell | mature alpha-beta T cell |
-| CD14+ Mono | `CL:0001054` | CD14-positive monocyte | mononuclear cell |
-| B | `CL:0000236` | B cell | mononuclear cell |
-| CD8 T | `CL:0000625` | CD8-positive, alpha-beta T cell | mature alpha-beta T cell |
-| FCGR3A+ Mono | `CL:0002396` | CD14-low, CD16-positive monocyte | mononuclear cell |
-| NK | `CL:0000623` | natural killer cell | mononuclear cell |
-| DC | `CL:0000451` | dendritic cell | mononuclear cell |
+| Naive CD4 T | `CL:0000895` | naive thymus-derived CD4-positive, alpha-beta T cell | lymphocyte |
+| Memory CD4 T | `CL:0000897` | CD4-positive, alpha-beta memory T cell | lymphocyte |
+| CD14+ Mono | `CL:0001054` | CD14-positive monocyte | mononuclear leukocyte |
+| B | `CL:0000236` | B cell | lymphocyte |
+| CD8 T | `CL:0000625` | CD8-positive, alpha-beta T cell | lymphocyte |
+| FCGR3A+ Mono | `CL:0002396` | CD14-low, CD16-positive monocyte | mononuclear leukocyte |
+| NK | `CL:0000623` | natural killer cell | lymphocyte |
+| DC | `CL:0000451` | dendritic cell | mononuclear leukocyte |
 | Platelet | `CL:0000233` | platelet | platelet |
 
 ## Marker Enrichment As Evidence
 
 `CLenricher()` and `CLcompareCluster()` are best read as marker-based evidence,
 not as a replacement for reviewing cell-type annotations. In the pbmc3k
-workflow, `CLcompareCluster()` produced 674 enriched rows from 3,456 Seurat
-marker rows. The top enriched CL term was an exact ID match for 1 of 9 reviewed
-annotations, but the median Lin semantic similarity between the top enriched
-term and the reviewed CL term was 0.790. That is a useful sanity check: marker
-enrichment often supports the same biological neighbourhood even when the
-highest-ranked marker term is more general, more specific, or based on a
-different naming convention.
+reference workflow, `CLcompareCluster()` produced 674 enriched rows from 3,456
+Seurat marker rows when the package default marker-database universe was used.
+The top enriched CL term was an exact ID match for 1 of 9 reviewed annotations,
+but the median Lin semantic similarity between the top enriched term and the
+reviewed CL term was 0.790. This is a concordance analysis, not an independent
+automated-annotation benchmark: markers were calculated for the published
+Seurat groups and compared with their reviewed CL terms.
+
+The enrichment universe is part of the analysis definition. Repeating the same
+workflow with the 13,714 genes present in the pbmc3k assay as `universe`
+produced 663 enriched rows and changed some top-ranked terms. For a restricted
+panel or a study-specific analysis, pass the genes that could have been
+detected; always report the selected universe with the results.
 
 ```r
 gene_clusters <- list(

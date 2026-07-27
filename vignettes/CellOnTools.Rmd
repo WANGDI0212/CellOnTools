@@ -282,10 +282,13 @@ if (has_cp) {
 }
 ```
 
-The default `universe = NULL` uses all genes present in the bundled marker
-database for the selected species. If your experiment measured a restricted
-panel, pass the measured genes as `universe` so the enrichment background
-matches the assay.
+The enrichment universe is part of the analysis definition. The default
+`universe = NULL` uses all genes present in the bundled marker database for the
+selected species. For a study-specific assay, pass the genes that could have
+been detected—for example, `rownames(seurat_object)` for the unfiltered feature
+space—so that the enrichment background matches the experiment. Record this
+choice because changing the universe can alter both the number and ranking of
+enriched terms.
 
 `CLcompareCluster()` extends enrichment to several gene sets at once. This is
 the usual shape of a single-cell workflow after marker detection:
@@ -313,34 +316,48 @@ before plotting.
 ## Case-study lessons from pbmc3k
 
 The package documentation was expanded using a manuscript-style pbmc3k analysis
-that connected Seurat annotations to Cell Ontology, explored ontology
+that connected published Seurat annotations to Cell Ontology, explored ontology
 relationships, rolled annotations to a coarser layer, and compared the reviewed
-labels with marker-gene enrichment evidence.
+labels with marker-gene enrichment evidence. The 2,700-cell raw object is used
+only for QC context; annotation analyses use the published 2,638-cell
+`pbmc3k.final` object. The example is therefore a standardisation and
+concordance case study, not an end-to-end clustering or independent automated
+annotation benchmark.
 
-Key results from that run:
+Key results from that run and the current background-sensitivity check:
 
 | Quantity | Value |
 |---|---:|
-| Processed pbmc3k cells | 2,638 |
-| Seurat annotation labels resolved to CL | 9 / 9 |
-| Ontology IDs loaded (including 3,534 CL IDs) | 19,154 |
+| Raw pbmc3k dimensions | 13,714 genes × 2,700 cells |
+| Cells passing the tutorial QC thresholds | 2,638 |
+| Seurat clusters / reviewed labels | 9 / 9 |
+| Reviewed labels resolved to CL | 9 / 9 |
+| Locked roll-up setting | `min_group_size = 3`, ancestor-count cap 8 |
 | Reviewed annotations after roll-up | 9 to 3 groups |
-| Seurat marker rows used for enrichment | 3,456 |
-| `CLcompareCluster()` enrichment rows | 674 |
-| Top enrichment exact CL-ID matches | 1 / 9 |
-| Median Lin similarity between top enriched and reviewed terms | 0.790 |
+| Seurat marker rows | 3,456 |
+| `CLcompareCluster()` rows, default marker universe | 674 |
+| `CLcompareCluster()` rows, 13,714-gene assay universe | 663 |
+| Top exact CL-ID matches, default marker universe | 1 / 9 |
+| Median Lin similarity, default marker universe | 0.790 |
 
 The exact-match number is intentionally not the only success criterion. Marker
 enrichment often returns a nearby parent, child, or sibling term. For example,
 the reviewed annotation `CD14-low, CD16-positive monocyte` was supported by a
-top enriched term `non-classical monocyte` with high Lin similarity. This is why
-the recommended pattern is:
+top enriched term `non-classical monocyte` with high Lin similarity. The quoted
+674-row and 0.790 results use the package's default marker-database universe;
+the 663-row sensitivity result shows why the background must be reported.
 
-1. keep a reviewed annotation dictionary with explicit CL IDs;
-2. store CL IDs and labels back into cell metadata;
-3. use marker enrichment as evidence and quality control;
+The recommended pattern is:
+
+1. keep a versioned, reviewed annotation dictionary with explicit CL IDs and
+   the search evidence used to choose them;
+2. store the original labels, CL IDs, and CL labels together in cell metadata;
+3. use marker enrichment as evidence and quality control, with an explicitly
+   declared universe;
 4. use semantic similarity to quantify near-matches rather than relying only on
-   exact ID equality.
+   exact ID equality;
+5. when evaluating marker-based label recovery, derive markers from blinded
+   cluster IDs and join the reference labels only after predictions are locked.
 
 For a fuller single-cell workflow template, see:
 
