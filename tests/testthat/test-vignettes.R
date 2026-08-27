@@ -17,7 +17,7 @@ test_that("vignette purl output excludes optional and network-heavy code", {
     "clusterProfiler|ontologySimilarity)\\b"
   )
 
-  for (filename in c("CellOnTools.Rmd", "pbmc3k-workflow.Rmd")) {
+  for (filename in "CellOnTools.Rmd") {
     input <- find_vignette_source(filename)
     if (is.na(input)) {
       skip(paste("Vignette source is not installed in this build:", filename))
@@ -34,9 +34,5 @@ test_that("vignette purl output excludes optional and network-heavy code", {
     )
     code <- readLines(output, warn = FALSE)
     expect_length(grep(forbidden, code, perl = TRUE), 0L)
-    if (identical(filename, "pbmc3k-workflow.Rmd")) {
-      expect_true(any(grepl("CLmarkers", code, fixed = TRUE)))
-      expect_gt(length(code[nzchar(trimws(code))]), 0L)
-    }
   }
 })

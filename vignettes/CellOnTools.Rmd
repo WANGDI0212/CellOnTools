@@ -359,12 +359,6 @@ The recommended pattern is:
 5. when evaluating marker-based label recovery, derive markers from blinded
    cluster IDs and join the reference labels only after predictions are locked.
 
-For a fuller single-cell workflow template, see:
-
-```{r pbmc-vignette-link, eval = FALSE, purl = FALSE}
-vignette("pbmc3k-workflow", package = "CellOnTools")
-```
-
 ## Mapping free-text names to CL terms
 
 `CLmap()` (batch) and `CLmapInteractive()` (console review) resolve free-text

@@ -60,13 +60,12 @@ install stays lightweight. Install only the pieces needed for your workflow:
 | OLS name mapping | `rols` |
 | Marker enrichment and plots | `clusterProfiler`, `enrichplot` |
 | Similarity heatmaps | `pheatmap` |
-| PBMC workflow template | `Seurat` |
 
 To install the full workflow stack:
 
 ```r
 install.packages(c("ontologyIndex", "ontologySimilarity", "pheatmap",
-                   "ggraph", "ggplot2", "igraph", "Seurat"))
+                   "ggraph", "ggplot2", "igraph"))
 
 # install.packages("BiocManager")
 BiocManager::install(c("AnnotationHub", "S4Vectors", "clusterProfiler",
@@ -226,12 +225,6 @@ Start with the package overview:
 
 ```r
 vignette("CellOnTools", package = "CellOnTools")
-```
-
-For a manuscript-style single-cell workflow inspired by the pbmc3k analysis:
-
-```r
-vignette("pbmc3k-workflow", package = "CellOnTools")
 ```
 
 ## Ancestor Count And Graph Distance
