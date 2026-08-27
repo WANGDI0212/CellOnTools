@@ -329,23 +329,27 @@ Key results from that run and the current background-sensitivity check:
 | Quantity | Value |
 |---|---:|
 | Raw pbmc3k dimensions | 13,714 genes × 2,700 cells |
-| Cells passing the tutorial QC thresholds | 2,638 |
+| Published `pbmc3k.final` dimensions | 13,714 genes × 2,638 cells |
 | Seurat clusters / reviewed labels | 9 / 9 |
 | Reviewed labels resolved to CL | 9 / 9 |
-| Locked roll-up setting | `min_group_size = 3`, ancestor-count cap 8 |
-| Reviewed annotations after roll-up | 9 to 3 groups |
+| Locked roll-up setting | Preserve platelet; `min_group_size = 2`, ancestor-count cap 8 for the other 8 terms |
+| Reviewed annotations after roll-up | 9 to 4 final groups (3 leukocyte groups plus platelet) |
 | Seurat marker rows | 3,456 |
 | `CLcompareCluster()` rows, default marker universe | 674 |
-| `CLcompareCluster()` rows, 13,714-gene assay universe | 663 |
-| Top exact CL-ID matches, default marker universe | 1 / 9 |
-| Median Lin similarity, default marker universe | 0.790 |
+| `CLcompareCluster()` rows, separate 13,714-gene universe sensitivity analysis | 663 |
+| Exact CL-ID matches, depth-prioritised exploratory rule | 1 / 9 |
+| Median Lin similarity, depth-prioritised exploratory rule | 0.875 |
+| Ancestor-descendant-comparable selections | 9 / 9 |
 
 The exact-match number is intentionally not the only success criterion. Marker
-enrichment often returns a nearby parent, child, or sibling term. For example,
-the reviewed annotation `CD14-low, CD16-positive monocyte` was supported by a
-top enriched term `non-classical monocyte` with high Lin similarity. The quoted
-674-row and 0.790 results use the package's default marker-database universe;
-the 663-row sensitivity result shows why the background must be reported.
+enrichment often returns a nearby parent, child, or sibling term. The current
+script uses an exploratory rule that retains candidates within ten-fold of the
+smallest adjusted P value and then prefers the greatest CL-only ancestor count.
+For example, the reviewed annotation `CD14-low, CD16-positive monocyte` was
+supported by `non-classical monocyte` with high Lin similarity. The quoted
+674-row and 0.875 results use the package's default marker-database universe;
+the separate 663-row sensitivity result shows why the background must be
+reported.
 
 The recommended pattern is:
 

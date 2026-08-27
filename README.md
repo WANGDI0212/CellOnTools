@@ -170,21 +170,21 @@ standard tutorial QC thresholds, and uses the published 2,638-cell
 `pbmc3k.final` object for annotation analyses. It is therefore an annotation
 standardisation and concordance case study, not an end-to-end benchmark of
 normalisation, clustering, or automated cell typing. All 9 Seurat labels were
-resolved to reviewed CL IDs. After inspecting the parameter sweep, the locked
-case-study setting (`min_group_size = 3`,
-`max_candidate_ancestor_count = 8`) rolled those 9 terms into 3 biologically
-interpretable groups:
+resolved to reviewed CL IDs. In the current standalone script, platelet is
+preserved unchanged and the locked setting (`min_group_size = 2`,
+`max_candidate_ancestor_count = 8`) is applied to the other 8 terms. This
+produces 3 leukocyte groups and 4 final groups after platelet is restored:
 
 | Seurat label | CL ID | CL label | Roll-up label |
 |---|---|---|---|
 | Naive CD4 T | `CL:0000895` | naive thymus-derived CD4-positive, alpha-beta T cell | lymphocyte |
 | Memory CD4 T | `CL:0000897` | CD4-positive, alpha-beta memory T cell | lymphocyte |
-| CD14+ Mono | `CL:0001054` | CD14-positive monocyte | mononuclear leukocyte |
+| CD14+ Mono | `CL:0001054` | CD14-positive monocyte | myeloid leukocyte |
 | B | `CL:0000236` | B cell | lymphocyte |
 | CD8 T | `CL:0000625` | CD8-positive, alpha-beta T cell | lymphocyte |
-| FCGR3A+ Mono | `CL:0002396` | CD14-low, CD16-positive monocyte | mononuclear leukocyte |
+| FCGR3A+ Mono | `CL:0002396` | CD14-low, CD16-positive monocyte | myeloid leukocyte |
 | NK | `CL:0000623` | natural killer cell | lymphocyte |
-| DC | `CL:0000451` | dendritic cell | mononuclear leukocyte |
+| DC | `CL:0000451` | dendritic cell | dendritic cell |
 | Platelet | `CL:0000233` | platelet | platelet |
 
 ## Marker Enrichment As Evidence
@@ -193,17 +193,19 @@ interpretable groups:
 not as a replacement for reviewing cell-type annotations. In the pbmc3k
 reference workflow, `CLcompareCluster()` produced 674 enriched rows from 3,456
 Seurat marker rows when the package default marker-database universe was used.
-The top enriched CL term was an exact ID match for 1 of 9 reviewed annotations,
-but the median Lin semantic similarity between the top enriched term and the
-reviewed CL term was 0.790. This is a concordance analysis, not an independent
-automated-annotation benchmark: markers were calculated for the published
-Seurat groups and compared with their reviewed CL terms.
+The script's exploratory concordance rule retains candidates within ten-fold of
+the smallest adjusted P value and then prefers the greatest CL-only ancestor
+count. It produced an exact ID match for 1 of 9 reviewed annotations, a median
+Lin semantic similarity of 0.875, and ancestor-descendant-comparable selected
+terms for all 9 groups. This is not an independent automated-annotation
+benchmark: markers were calculated for the published Seurat groups and compared
+with their reviewed CL terms.
 
-The enrichment universe is part of the analysis definition. Repeating the same
-workflow with the 13,714 genes present in the pbmc3k assay as `universe`
-produced 663 enriched rows and changed some top-ranked terms. For a restricted
-panel or a study-specific analysis, pass the genes that could have been
-detected; always report the selected universe with the results.
+The enrichment universe is part of the analysis definition. A separate
+background-sensitivity analysis with the 13,714 genes present in the pbmc3k
+assay as `universe` produced 663 enriched rows and changed some top-ranked
+terms. For a restricted panel or a study-specific analysis, pass the genes that
+could have been detected; always report the selected universe with the results.
 
 ```r
 gene_clusters <- list(
